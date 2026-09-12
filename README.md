@@ -48,8 +48,7 @@ slicer. Assemblies nest exactly one level deep. These are deliberate; see
 Requires Docker with Compose v2.
 
 ```sh
-# Set REPOSITORY_URL to the HTTPS clone URL of the repository you are using.
-git clone "$REPOSITORY_URL" 3dprinttally
+git clone https://github.com/YOURNAME/3dprinttally.git
 cd 3dprinttally
 cp .env.example .env
 docker compose up -d --build
@@ -107,8 +106,10 @@ printer.)
 > where active development goes. Treat it as stable rather than evolving:
 > bug reports welcome, feature requests likely to sit.
 
-**Filament.** Per-brand stock ledgers, pooled cost per gram across brands sharing
-a material and color, and purchase history.
+**Filament.** Stock, value and purchase history per material and color, with cost
+as a grams-weighted average across every purchase in that pool. Brand is an
+optional field: record it and purchases from different vendors still price as one
+pool, while the ledger keeps track of which purchase was consumed.
 
 **QuickBooks Online.** Exports product identity rows (name, SKU, category) for
 bulk import. It deliberately does not invent accounts, item types, quantities or
@@ -155,17 +156,3 @@ Avery® is a registered trademark of Avery Dennison Corporation. This project is
 not affiliated with, endorsed by, or connected to Avery Dennison. Their product
 numbers are referenced only to describe the physical label sheet dimensions this
 software is compatible with.
-
-
-## License and corresponding source
-
-3DPrintTally is licensed under **AGPL-3.0-or-later**. See [LICENSE](LICENSE) and
-[COPYRIGHT](COPYRIGHT). You may use, modify and redistribute it, including
-commercially, subject to the license. Modified network deployments must offer
-corresponding source to their users. The application's sidebar includes a source
-archive download; deployment instructions explain how to keep it current.
-Third-party dependencies retain their own licenses; see [THIRD-PARTY.md](THIRD-PARTY.md).
-
-Catalog CSV export rejects formula-like prefixes and control characters to avoid
-spreadsheet execution. Manual entry remains available; a full backup preserves
-original text that cannot safely be exported to CSV.

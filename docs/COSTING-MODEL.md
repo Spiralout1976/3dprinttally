@@ -67,16 +67,23 @@ calculator.
 
 ## 3. Filament cost is pooled across brands, stock is not
 
-If you buy PLA Black from two vendors at different prices, you have:
+A filament entry is identified by **material + color**. The Filament page shows
+one row per material and color — that is the pool, and it is the only thing you
+manage directly.
 
-- **One cost pool.** `cost_per_gram_pooled()` returns the grams-weighted average
-  purchase price across every brand sharing that material and color. Two 1,000 g
-  spools at $17.90 and $24.99 give $0.021445/g.
-- **Two stock ledgers.** Brand rows stay separate, because reordering is a
-  per-brand decision and you need to know which one ran out.
+`cost_per_gram_pooled()` returns the grams-weighted average purchase price across
+every purchase in that pool. Two 1,000 g spools at $17.90 and $24.99 give
+$0.021445/g. Cost is always a live query over the purchase ledger, never stored.
 
-When a job consumes filament, grams are allocated across the brand ledgers that
-actually have stock, so inventory stays truthful while the *price* stays pooled.
+**Brand is an optional field and blank by default.** Leave it empty and there is
+exactly one entry per color and nothing below applies.
+
+If you do record brands, buying the same color from two vendors creates two
+underlying rows that share one pool. You still see a single row on the Filament
+page, with the brand names shown in its label; stock and value are the sum. The
+split exists so consumption can be attributed to the purchase it actually came
+from, which keeps the ledger honest and makes a deleted job reverse exactly what
+it took. It is bookkeeping detail, not a second inventory to manage.
 
 Matching normalizes case and whitespace. It does **not** merge genuine finish
 differences — put `PLA Matte` and `PLA` in the material field separately if you
