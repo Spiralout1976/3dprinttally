@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.label }} Ledger · 3DPrintTally{% endblock %}
+{% block page_title %}{{ pool.label }}{% endblock %}
+{% block page_subtitle %}Every gram in and out, newest first. Anything here can be corrected.{% endblock %}
+{% block content %}
+
+<style>
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  .in  { color: #0f9d58; font-weight: 700; }
+  .out { color: var(--primary); font-weight: 700; }
+  .tx-row td { background: var(--panel2); padding: 16px 10px; }
+  .tx-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end; }
+  .tx-title {
+    font-family: var(--font-head); font-size: 14px; font-weight: 700;
+    color: var(--primary); margin: 0 0 10px;
+  }
+</style>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Ledger</h2>
+    <div class="toolbar-actions">
+      <a class="btn secondary" href="{{ url_for('filament.index') }}">← Back to Filament</a>
+    </div>
+  </div>
+
+  {% if not entries %}
+    <div class="empty">
+      Nothing recorded yet. Use <strong>+ Spools</strong> on the Filament page to log your first purchase.
+    </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Type</th>
+          <th class="num">Change</th>
+          <th class="num">Balance After</th>
+          <th class="num">Cost</th>
+          <th>Note</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for e in entries %}
+        <tr>
+          <td>{{ e.created_at.replace("T", " ") }}</td>
+          <td>
+            {% if e.kind == 'purchase' %}<span class="badge green">Purchase</span>
+            {% elif e.kind == 'job' %}<span class="badge gray">Job</span>
+            {% elif e.kind == 'waste' %}<span class="badge red">Waste</span>
+            {% elif e.kind == 'personal' %}<span class="badge gray">Personal</span>
+            {% else %}<span class="badge gray">Reconcile</span>{% endif %}
+          </td>
+          <td class="num {{ 'in' if e.grams >= 0 else 'out' }}">
+            {{ '{:+,.0f}'.format(e.grams) }} g
+          </td>
+          <td class="num">{{ '{:,.0f}'.format(e.balance_after) }} g</td>
+          <td class="num">
+            {% if e.cost is not none %}${{ '{:,.2f}'.format(e.cost) }}
+              {% if e.cost_per_spool is not none %}
+                <small class="info" style="display:block">${{ '{:,.2f}'.format(e.cost_per_spool) }}/spool</small>
+              {% endif %}
+            {% else %}<span class="info">—</span>{% endif %}
+          </td>
+          <td>
+            {{ e.note }}
+            {%- if e.spools %} <span class="info">({{ '%g' % e.spools }} spool{{ '' if e.spools == 1 else 's' }})</span>{% endif -%}
+            {%- if e.job_cost_id %} <span class="info">· job #{{ e.job_cost_id }}</span>{% endif -%}
+          </td>
+          <td>
+            {% if e.job_cost_id %}
+              <span class="info">From a job</span>
+            {% else %}
+              <button class="btn small ghost" type="button" onclick="txpanel({{ e.id }})">Fix</button>
+            {% endif %}
+          </td>
+        </tr>
+
+        {% if not e.job_cost_id %}
+        <tr class="tx-row" id="tx-{{ e.id }}" style="display: none">
+          <td colspan="7">
+            <p class="tx-title">Correct This Entry</p>
+            <form method="post" action="{{ url_for('filament.tx_edit', tx_id=e.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="tx-grid">
+                {% if e.kind == 'purchase' %}
+                  <div class="field">
+                    <label>Spools</label>
+                    <input name="spools" type="number" step="0.01"
+                           value="{{ '%g' % (e.spools or 1) }}">
+                  </div>
+                  <div class="field">
+                    <label>Grams per Spool</label>
+                    <input name="grams_per_spool" type="number" step="1"
+                           value="{{ '%.0f' % (e.grams / e.spools if e.spools else e.grams) }}">
+                  </div>
+                  <div class="field">
+                    <label>Price per Spool ($)</label>
+                    <input name="price_per_spool" type="number" step="0.01"
+                           value="{{ '%.2f' % e.cost_per_spool if e.cost_per_spool is not none else '' }}"
+                           placeholder="21.99">
+                  </div>
+                {% else %}
+                  <div class="field">
+                    <label>Gram Change</label>
+                    <input name="grams" type="number" step="0.1" value="{{ '%g' % e.grams }}">
+                  </div>
+                  <div class="field" style="grid-column: span 2">
+                    <span class="field-note">
+                      Negative removes stock, positive adds it back.
+                    </span>
+                  </div>
+                {% endif %}
+                <div class="field">
+                  <label>Note</label>
+                  <input name="note" value="{{ e.note }}">
+                </div>
+              </div>
+              <div class="footer-actions">
+                <span class="info">
+                  {% if e.kind == 'purchase' %}
+                    Leave the price blank if you truly do not know it — stock still tracks, you just get no cost figure.
+                  {% else %}
+                    Balances below this entry recalculate automatically.
+                  {% endif %}
+                </span>
+                <button class="btn primary" type="submit">Save Entry</button>
+              </div>
+            </form>
+            <div class="footer-actions" style="border-top: 1px solid var(--line); padding-top: 14px">
+              <span class="info">Removing this entry takes its grams back out of the running balance.</span>
+              <form method="post" action="{{ url_for('filament.tx_delete', tx_id=e.id) }}"
+                    data-confirm="Delete this {{ e.kind }} entry of {{ '%+.0f' % e.grams }} g?">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn danger" type="submit">Delete Entry</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<script nonce="{{ csp_nonce }}">
+function txpanel(id) {
+  const row = document.getElementById("tx-" + id);
+  const wasOpen = row.style.display !== "none";
+  document.querySelectorAll(".tx-row").forEach(r => r.style.display = "none");
+  if (!wasOpen) row.style.display = "";
+}
+</script>
+
+{% endblock %}

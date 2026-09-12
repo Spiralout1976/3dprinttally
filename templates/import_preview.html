@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block page_title %}Review catalog import{% endblock %}
+{% block content %}
+<section class="card">
+<p>No catalog changes have been saved yet.</p>
+<p>{{ stats.added }} products will be added; {{ stats.updated }} will be updated.
+{{ stats.parts }} parts and {{ stats.components }} assembly components will be written.</p>
+<p>For products included in this file, version 2 rows replace their parts and assembly links. Products absent from the file are left alone.</p>
+{% if stats.legacy %}<p>Legacy CSV detected. Existing matching filament links are preserved. Use a version 2 export for complete round trips.</p>{% endif %}
+<form method="post" action="{{ url_for('confirm_import') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="import_token" value="{{ token }}">
+<button class="btn primary" type="submit">Confirm import</button>
+<a class="btn secondary" href="{{ url_for('products') }}">Cancel</a>
+</form></section>
+{% endblock %}

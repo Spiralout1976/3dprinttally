@@ -1,0 +1,29 @@
+# Secrets — never tracked, regardless of location
+.env
+.env.*
+!.env.example
+
+# Live application data and runtime artifacts (database, uploaded photos).
+# Nothing here is source: the schema is created by init_db() in app.py, not from
+# a checked-in seed file, so the whole directory is runtime state.
+data/
+
+# Defense in depth: any SQLite database or its WAL/SHM sidecars, wherever they
+# land — not just under data/.
+*.db
+*.db-wal
+*.db-shm
+
+# Backup output, and hand-made pre-upgrade snapshots.
+backups/
+data-backup-*/
+*.tar
+*.tar.gz
+*.zip
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.partial

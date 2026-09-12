@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Create Labels · 3DPrintTally{% endblock %}
+{% block page_title %}Create Labels{% endblock %}
+{% block page_subtitle %}Build the queue, then generate a print-ready label sheet PDF.{% endblock %}
+{% block content %}
+<form method="post" action="{{ url_for('generate') }}" target="_blank" id="labelForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<section class="card">
+  <div class="toolbar">
+    <div class="field compact">
+      <label>Start at label position</label>
+      <select name="start_position" id="startPosition" onchange="highlightSheet()">
+        {% for i in range(1,31) %}
+        <option value="{{ i }}">{{ i }}{% if i==1 %} — New sheet{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" class="btn secondary" onclick="addRow()">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add Row
+      </button>
+      <button type="button" class="btn ghost" onclick="clearRows()">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Clear
+      </button>
+    </div>
+  </div>
+  <div class="sheet-map" id="sheetMap">
+    {% for i in range(1,31) %}<span data-pos="{{ i }}">{{ i }}</span>{% endfor %}
+  </div>
+  <div class="table-wrap">
+    <table id="queue">
+      <thead><tr><th>SKU / Product</th><th>Qty on Label</th><th>Copies</th><th>Preview</th><th></th></tr></thead>
+      <tbody id="rows">
+        <tr>
+          <td>
+            <select name="sku[]" required onchange="syncPreview(this)">
+              <option value="">Choose product…</option>
+              {% for p in products %}
+              <option value="{{ p.sku }}" data-name="{{ p.product_name }}">{{ p.sku }} — {{ p.product_name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input name="qty[]" type="number" min="1" step="1" placeholder="4" required oninput="syncPreview(this)"></td>
+          <td><input name="copies[]" type="number" min="1" step="1" value="1" required></td>
+          <td><div class="mini-label"><strong>Product</strong><span>SKU</span><b>Qty</b></div></td>
+          <td><button type="button" class="icon-btn" onclick="removeRow(this)">×</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="footer-actions">
+    <div><strong id="labelCount">1</strong> label(s) queued</div>
+    <button class="btn primary large" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg>
+      Generate Label PDF
+    </button>
+  </div>
+</section>
+</form>
+<section class="card info">
+  <strong>Printing rule:</strong> Print the generated PDF on US Letter at <strong>Actual Size / 100%</strong>. Disable Fit, Shrink, or scaling.
+</section>
+<script nonce="{{ csp_nonce }}">
+function rowTemplate(){
+  const first = document.querySelector("#rows tr");
+  const clone = first.cloneNode(true);
+  clone.querySelector("select").value = "";
+  clone.querySelector('input[name="qty[]"]').value = "";
+  clone.querySelector('input[name="copies[]"]').value = "1";
+  const p = clone.querySelector(".mini-label");
+  p.innerHTML = "<strong>Product</strong><span>SKU</span><b>Qty</b>";
+  return clone;
+}
+function addRow(){ document.getElementById("rows").appendChild(rowTemplate()); updateCount(); }
+function removeRow(btn){
+  const rows = document.querySelectorAll("#rows tr");
+  if(rows.length === 1){ clearRows(); return; }
+  btn.closest("tr").remove(); updateCount();
+}
+function clearRows(){
+  const body = document.getElementById("rows");
+  while(body.children.length>1) body.lastElementChild.remove();
+  const row = body.querySelector("tr");
+  row.querySelector("select").value="";
+  row.querySelector('input[name="qty[]"]').value="";
+  row.querySelector('input[name="copies[]"]').value="1";
+  row.querySelector(".mini-label").innerHTML="<strong>Product</strong><span>SKU</span><b>Qty</b>";
+  updateCount();
+}
+function syncPreview(el){
+  const row=el.closest("tr"), sel=row.querySelector("select"), qty=row.querySelector('input[name="qty[]"]');
+  const opt=sel.options[sel.selectedIndex], name=opt?.dataset?.name || "Product", sku=sel.value || "SKU";
+  const preview = row.querySelector(".mini-label");
+  preview.replaceChildren();
+  for (const [tag, text] of [["strong", name], ["span", sku], ["b", "Qty: " + (qty.value || "—")]]) {
+    const node = document.createElement(tag); node.textContent = text; preview.appendChild(node);
+  }
+}
+function updateCount(){
+  let total=0;
+  document.querySelectorAll('input[name="copies[]"]').forEach(i=> total += parseInt(i.value||1));
+  document.getElementById("labelCount").textContent=total;
+}
+function highlightSheet(){
+  const start = parseInt(document.getElementById("startPosition").value || "1");
+  document.querySelectorAll("#sheetMap span").forEach(span=>{
+    const pos = parseInt(span.dataset.pos);
+    span.classList.toggle("current", pos >= start);
+  });
+}
+document.addEventListener("input", e=>{if(e.target.name==="copies[]") updateCount();});
+document.addEventListener("DOMContentLoaded", highlightSheet);
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block page_title %}Please check your entry{% endblock %}
+{% block content %}
+<section class="card"><p role="alert">{{ message }}</p>
+<p>Use your browser's Back button to review the form, or open the page again if the form expired.</p>
+<a class="btn secondary" href="{{ url_for('dashboard') }}">Dashboard</a></section>
+{% endblock %}

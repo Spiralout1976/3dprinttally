@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Quick Calculator · 3DPrintTally{% endblock %}
+{% block page_title %}Quick Calculator{% endblock %}
+{% block page_subtitle %}Price out a one-off idea before it's a real catalog entry — no SKU required.{% endblock %}
+{% block content %}
+<section class="card">
+  <form method="post" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label>Qty on Plate</label>
+      <input name="qty_on_plate" type="number" step="1" min="0" value="{{ form_values.qty_on_plate }}" placeholder="e.g. 6" required>
+    </div>
+    <div class="field">
+      <label>Filament Used — Plate (g)</label>
+      <input name="filament_used_g" type="number" step="0.01" min="0" value="{{ form_values.filament_used_g }}" placeholder="e.g. 59.06">
+    </div>
+    <div class="field">
+      <label>Filament Cost — Plate ($)</label>
+      <input name="filament_cost" type="number" step="0.01" min="0" value="{{ form_values.filament_cost }}" placeholder="e.g. 1.48">
+    </div>
+    <div class="field">
+      <label>Print Time</label>
+      <input name="print_time_text" value="{{ form_values.print_time_text }}" placeholder='e.g. 1h 52m' required>
+    </div>
+    <div class="field">
+      <label>Active Labor (min, blank = default)</label>
+      <input name="active_labor_min" type="number" step="0.5" min="0" value="{{ form_values.active_labor_min }}" placeholder="Default 2">
+    </div>
+    <div class="field">
+      <label>Actual Selling Price ($, optional)</label>
+      <input name="actual_selling_price" type="number" step="0.01" min="0" value="{{ form_values.actual_selling_price }}" placeholder="What you'd charge">
+    </div>
+    <button class="btn primary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+      Calculate
+    </button>
+  </form>
+
+  {% if result %}
+    {% if result.error %}
+      <div class="pricing-error" style="margin-top:16px">{{ result.error }}</div>
+    {% else %}
+      <div class="pricing-results" style="margin-top:16px">
+        <div class="pricing-grid">
+          <div class="pricing-stat"><span>True Cost / Item</span><strong>${{ "%.3f"|format(result.true_cost_per_item) }}</strong></div>
+          <div class="pricing-stat highlight"><span>Suggested Wholesale</span><strong>${{ "%.2f"|format(result.suggested_wholesale) }}</strong></div>
+          <div class="pricing-stat highlight"><span>Suggested Retail</span><strong>${{ "%.2f"|format(result.suggested_retail) }}</strong></div>
+          {% if result.actual_profit is not none %}
+          <div class="pricing-stat"><span>Actual Profit / Item</span><strong>${{ "%.2f"|format(result.actual_profit) }}</strong></div>
+          <div class="pricing-stat"><span>Actual Margin</span><strong>{{ "%.1f"|format(result.actual_margin * 100) }}%</strong></div>
+          {% endif %}
+        </div>
+        <div class="pricing-margins">
+          <span>40%: ${{ "%.2f"|format(result.margin_40) }}</span>
+          <span>50%: ${{ "%.2f"|format(result.margin_50) }}</span>
+          <span>60%: ${{ "%.2f"|format(result.margin_60) }}</span>
+          <span>70%: ${{ "%.2f"|format(result.margin_70) }}</span>
+          <span>80%: ${{ "%.2f"|format(result.margin_80) }}</span>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

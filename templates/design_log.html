@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Design Time · 3DPrintTally{% endblock %}
+{% block page_title %}Design Time{% endblock %}
+{% block page_subtitle %}One-time CAD and setup work, billed at ${{ design_rate }}/hr — separately from the print, and never amortized into unit cost.{% endblock %}
+{% block content %}
+
+<div class="stats">
+  <div class="stat">
+    <span>Unbilled Billable Time</span>
+    <strong>{{ '%.0f'|format(unbilled_minutes) }}<small style="font-size:16px"> min</small></strong>
+  </div>
+  <div class="stat">
+    <span>Worth at ${{ design_rate }}/hr</span>
+    <strong>${{ '%.2f'|format(unbilled_value) }}</strong>
+  </div>
+  <div class="stat">
+    <span>Sessions Logged</span>
+    <strong>{{ sessions|length }}</strong>
+  </div>
+</div>
+
+{% if running %}
+<section class="card note">
+  <div class="card-head"><h2>Clock Running</h2></div>
+  <p class="field-note">
+    Started {{ running.started_at }}
+    {% if running.sku %} · {{ running.sku }}{% endif %}
+    {% if running.customer %} · {{ running.customer }}{% endif %}
+    {% if running.job_label %} · {{ running.job_label }}{% endif %}
+    {% if not running.billable %} · <span class="badge gray">not billable</span>{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('design_stop') }}" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label>What did you actually work on?</label>
+      <input name="note" value="{{ running.note or '' }}" placeholder="e.g. photo-to-lithophane conversion, second pass on frame thickness">
+      <span class="field-note">Written now while you remember it. This is the record that tells you later whether the time was work on the part or time spent figuring out how.</span>
+    </div>
+    <button class="btn primary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      Stop Clock &amp; Log Time
+    </button>
+  </form>
+</section>
+{% else %}
+<div class="grid two">
+
+<section class="card">
+  <div class="card-head"><h2>Start the Clock</h2></div>
+  <p class="field-note">One clock at a time. Start it before you open the CAD, not after — reconstructed time runs 30–50% low.</p>
+  <form method="post" action="{{ url_for('design_start') }}" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label>SKU (optional)</label>
+      <input name="sku" list="sku-options" placeholder="CUST-SGN-001">
+      <span class="field-note">Attach to a catalog SKU and the Job Calculator will offer this time automatically. Leave blank for a design that has no SKU yet.</span>
+    </div>
+    <div class="field">
+      <label>Customer (optional)</label>
+      <input name="customer" list="customer-options" placeholder="Anthony">
+    </div>
+    <div class="field">
+      <label>Job / What You're Building</label>
+      <input name="job_label" placeholder="Lithophane from customer photo">
+    </div>
+    <div class="field">
+      <label>Note</label>
+      <input name="note" placeholder="Optional — can be filled in when you stop">
+    </div>
+    <label class="check">
+      <input type="checkbox" name="billable" value="0"> This is learning time, not billable
+    </label>
+    <span class="field-note">Tick this for tutorials, test geometry, and working out how to do something you haven't done before. That's tuition — you pay for it, not the customer. Log it anyway so you can see what the learning curve actually costs.</span>
+    <button class="btn primary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      Start Clock
+    </button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Log Time Manually</h2></div>
+  <p class="field-note">For the session you forgot to time. Everything entered here is permanently flagged <span class="badge gray">est</span> — a number you reconstructed should never look like one the clock measured.</p>
+  <form method="post" action="{{ url_for('design_add') }}" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label>Minutes</label>
+      <input name="minutes" type="number" step="1" min="1" required placeholder="45">
+      <span class="field-note">Round up, not down. You will under-remember the messaging, the failed first attempt, and the twenty minutes of fiddling with hole spacing.</span>
+    </div>
+    <div class="field">
+      <label>SKU (optional)</label>
+      <input name="sku" list="sku-options" placeholder="CUST-SGN-001">
+    </div>
+    <div class="field">
+      <label>Customer (optional)</label>
+      <input name="customer" list="customer-options" placeholder="Anthony">
+    </div>
+    <div class="field">
+      <label>Job / What You Built</label>
+      <input name="job_label" placeholder="Lithophane from customer photo">
+    </div>
+    <div class="field">
+      <label>Note</label>
+      <input name="note" placeholder="What the time actually went into">
+    </div>
+    <label class="check">
+      <input type="checkbox" name="billable" value="0"> Learning time, not billable
+    </label>
+    <button class="btn secondary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      Log Time
+    </button>
+  </form>
+</section>
+
+</div>
+{% endif %}
+
+<datalist id="sku-options">
+  {% for p in catalog %}<option value="{{ p.sku }}">{{ p.product_name }}</option>{% endfor %}
+</datalist>
+<datalist id="customer-options">
+  {% for c in customers %}<option value="{{ c }}">{% endfor %}
+</datalist>
+
+<section class="card">
+  <div class="section-head">
+    <h2>Session Log</h2>
+    <p>Billable, unbilled time is what the Job Calculator offers. Time marked billed is locked to a saved quote and cannot be charged twice.</p>
+  </div>
+  {% if sessions %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Logged</th>
+          <th>SKU</th>
+          <th>Customer</th>
+          <th>Job</th>
+          <th>Minutes</th>
+          <th>Value</th>
+          <th>Status</th>
+          <th>Note</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in sessions %}
+        <tr class="{{ 'muted-row' if not s.billable or s.billed_job_id else '' }}">
+          <td>{{ (s.started_at or s.created_at)[:16]|replace('T',' ') }}</td>
+          <td>{{ s.sku or '—' }}</td>
+          <td>{{ s.customer or '—' }}</td>
+          <td>{{ s.job_label or '—' }}</td>
+          <td>
+            {% if s.ended_at %}{{ '%.0f'|format(s.minutes or 0) }}
+            {% else %}<span class="badge red">running</span>{% endif %}
+          </td>
+          <td>
+            {% if s.ended_at and s.billable %}
+              ${{ '%.2f'|format((s.minutes or 0) / 60 * design_rate) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if s.billed_job_id %}<span class="badge green">billed #{{ s.billed_job_id }}</span>
+            {% elif not s.billable %}<span class="badge gray">learning</span>
+            {% elif s.ended_at %}<span class="badge red">unbilled</span>
+            {% else %}<span class="badge gray">open</span>{% endif %}
+            {% if s.estimated %}<span class="badge gray">est</span>{% endif %}
+          </td>
+          <td>{{ s.note or '' }}</td>
+          <td>
+            <div class="row-actions">
+              {% if not s.billed_job_id and s.ended_at %}
+              <form method="post" action="{{ url_for('design_toggle_billable', session_id=s.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn ghost small" type="submit">
+                  {{ 'Mark learning' if s.billable else 'Mark billable' }}
+                </button>
+              </form>
+              {% endif %}
+              {% if not s.billed_job_id %}
+              <form method="post" action="{{ url_for('design_delete', session_id=s.id) }}"
+                    data-confirm="Delete this design session? The minutes are gone for good.">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn danger small" type="submit">Delete</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No design time logged yet. Start the clock before your next custom job.</div>
+  {% endif %}
+</section>
+
+{% endblock %}

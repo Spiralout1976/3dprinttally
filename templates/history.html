@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Print History · 3DPrintTally{% endblock %}
+{% block page_title %}Print History{% endblock %}
+{% block page_subtitle %}Audit trail of generated label jobs.{% endblock %}
+{% block content %}
+<section class="card">
+{% if jobs %}
+<div class="job-list">
+{% for j in jobs %}
+  <details class="job">
+    <summary><span><strong>{{ j.created_at }}</strong><small>Start position {{ j.start_position }}</small></span><span class="badge red">{{ j.total_labels }} labels</span></summary>
+    <table><thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Copies</th></tr></thead><tbody>
+    {% for item in j.line_items %}
+      <tr><td><code>{{ item.sku }}</code></td><td>{{ item.product_name }}</td><td>{{ item.qty }}</td><td>{{ item.copies }}</td></tr>
+    {% endfor %}
+    </tbody></table>
+  </details>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty">No print jobs yet.</div>
+{% endif %}
+</section>
+{% endblock %}

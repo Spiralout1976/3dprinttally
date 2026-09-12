@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}Filament · 3DPrintTally{% endblock %}
+{% block page_title %}Filament Inventory{% endblock %}
+{% block page_subtitle %}What's on the shelf, what it cost, and what needs reordering.{% endblock %}
+{% block content %}
+
+<style>
+  .swatch {
+    width: 22px; height: 22px; border-radius: 5px; flex: none;
+    border: 1px solid var(--line); display: inline-block; vertical-align: middle;
+  }
+  .swatch.none {
+    background: repeating-linear-gradient(45deg,
+      var(--panel2) 0 4px, var(--line) 4px 8px);
+  }
+  .pool-name { display: flex; align-items: center; gap: 10px; }
+  .pool-name small { display: block; color: var(--muted); font-size: 12px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+  .bar {
+    height: 5px; border-radius: 999px; background: var(--panel2);
+    margin-top: 5px; overflow: hidden; min-width: 90px;
+  }
+  .bar i { display: block; height: 100%; background: var(--primary); }
+  .bar i.ok { background: #0f9d58; }
+  .panel-row td { background: var(--panel2); padding: 16px 10px; }
+  .panel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end; }
+  .panel-grid.wide { grid-template-columns: repeat(3, 1fr); }
+  .panel-title {
+    font-family: var(--font-head); font-size: 14px; font-weight: 700;
+    color: var(--primary); margin: 0 0 10px;
+  }
+  .panel-block + .panel-block {
+    border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px;
+  }
+  .hexpair { display: flex; gap: 8px; align-items: center; }
+  .hexpair input[type=color] { width: 44px; padding: 2px; height: 40px; }
+</style>
+
+<div class="stats" style="grid-template-columns: repeat(4, 1fr)">
+  <div class="stat"><span>Active Filaments</span><strong>{{ totals.pool_count }}</strong></div>
+  <div class="stat"><span>Total On Hand</span><strong>{{ '{:,.0f}'.format(totals.grams) }} g</strong></div>
+  <div class="stat"><span>Value On Hand</span><strong>${{ '{:,.0f}'.format(totals.value) }}</strong></div>
+  <div class="stat"><span>Needs Reorder</span><strong>{{ totals.reorder }}</strong></div>
+</div>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Add Filament</h2>
+    <span class="info">Inventory is merged by material + color. Brand and purchase prices remain in the ledger.</span>
+  </div>
+  <form method="post" action="{{ url_for('filament.add') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="panel-grid">
+      <div class="field">
+        <label for="add-material">Material</label>
+        <input id="add-material" name="material" list="material-list" placeholder="PLA" required>
+        <datalist id="material-list">
+          {% for m in materials %}<option value="{{ m }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="field">
+        <label for="add-color">Color</label>
+        <input id="add-color" name="color_name" placeholder="White" required>
+      </div>
+      <div class="field">
+        <label for="add-brand">Brand <span class="info">(optional)</span></label>
+        <input id="add-brand" name="brand" placeholder="Bambu">
+      </div>
+      <div class="field">
+        <label for="add-hex">Swatch</label>
+        <div class="hexpair">
+          <input type="color" id="add-hex-picker" value="#ffffff"
+                 onchange="document.getElementById('add-hex').value=this.value">
+          <input id="add-hex" name="color_hex" placeholder="#FFFFFF">
+        </div>
+      </div>
+      <div class="field">
+        <label for="add-spool">Spool Size (g)</label>
+        <input id="add-spool" name="default_spool_g" type="number" step="1" value="1000">
+      </div>
+      <div class="field">
+        <label for="add-threshold">Reorder At (g)</label>
+        <input id="add-threshold" name="reorder_threshold_g" type="number" step="1" value="500">
+      </div>
+      <div class="field">
+        <label for="add-open-spools">Spools You Have <span class="info">(optional)</span></label>
+        <input id="add-open-spools" name="open_spools" type="number" step="0.01" placeholder="2">
+      </div>
+      <div class="field">
+        <label for="add-open-price">Price per Spool ($) <span class="info">(optional)</span></label>
+        <input id="add-open-price" name="open_price_per_spool" type="number" step="0.01" placeholder="21.99">
+      </div>
+      <div class="field" style="grid-column: span 2">
+        <label for="add-notes">Notes</label>
+        <input id="add-notes" name="notes" placeholder="Dries fast, keep in the Sunlu box">
+      </div>
+    </div>
+    <div class="footer-actions">
+      <span class="info">Fill in spools and price and your opening stock is logged in the same click. Leave them blank to add the filament now and buy into it later.</span>
+      <button class="btn primary" type="submit">Add Filament</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>On Hand</h2>
+    <div class="toolbar-actions">
+      <a class="btn ghost" href="{{ url_for('filament.guide') }}" target="_blank" rel="noopener">How this works</a>
+      <a class="btn secondary" href="{{ url_for('filament.export') }}">Export CSV</a>
+    </div>
+  </div>
+
+  {% if not pools %}
+    <div class="empty">
+      No filament yet. Add your first material above, then use <strong>+ Spools</strong> to log what you have on the shelf.
+    </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Filament</th>
+          <th class="num">On Hand</th>
+          <th class="num">Spools</th>
+          <th class="num">$ / Spool</th>
+          <th class="num">$ / g</th>
+          <th class="num">Value</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in pools %}
+        <tr class="{{ '' if p.active else 'muted-row' }}">
+          <td>
+            <div class="pool-name">
+              <span class="swatch {{ '' if p.color_hex else 'none' }}"
+                    {% if p.color_hex %}style="background: {{ p.color_hex }}"{% endif %}></span>
+              <div>
+                <strong>{{ p.material }} {{ p.color_name }}</strong>
+                <small>
+                  {%- if p.brand %}Brands: {{ p.brand }} · {% endif -%}
+                  {{ '{:,.0f}'.format(p.default_spool_g) }} g spool ·
+                  reorder at {{ '{:,.0f}'.format(p.reorder_threshold_g) }} g
+                </small>
+              </div>
+            </div>
+          </td>
+          <td class="num">
+            {{ '{:,.0f}'.format(p.grams_on_hand) }} g
+            {% set pct = 0 if p.default_spool_g <= 0 else (p.grams_on_hand / (p.default_spool_g * 3) * 100) %}
+            <div class="bar">
+              <i class="{{ 'ok' if p.status == 'In stock' else '' }}"
+                 style="width: {{ [[pct, 100] | min, 0] | max }}%"></i>
+            </div>
+          </td>
+          <td class="num">{{ '{:,.2f}'.format(p.spools_on_hand) }}</td>
+          <td class="num">
+            {% if p.cost_per_spool is not none %}<strong>${{ '{:,.2f}'.format(p.cost_per_spool) }}</strong>
+            {% else %}<span class="info">—</span>{% endif %}
+          </td>
+          <td class="num">
+            {% if p.cost_per_gram is not none %}${{ '%.4f' % p.cost_per_gram }}
+            {% else %}<span class="info">—</span>{% endif %}
+          </td>
+          <td class="num">
+            {% if p.value_on_hand is not none %}${{ '{:,.2f}'.format(p.value_on_hand) }}
+            {% else %}<span class="info">—</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ p.status_class if p.active else 'gray' }}">
+              {{ p.status if p.active else 'Archived' }}
+            </span>
+          </td>
+          <td>
+            <div class="row-actions">
+              <button class="btn small primary" type="button"
+                      onclick="fpanel({{ p.id }}, 'buy')">+ Spools</button>
+              <button class="btn small secondary" type="button"
+                      onclick="fpanel({{ p.id }}, 'adjust')">Adjust</button>
+              <button class="btn small ghost" type="button"
+                      onclick="fpanel({{ p.id }}, 'edit')">Edit</button>
+              <a class="btn small ghost" href="{{ url_for('filament.history', fid=p.id) }}">Ledger</a>
+            </div>
+          </td>
+        </tr>
+
+        <tr class="panel-row" id="panel-{{ p.id }}" style="display: none">
+          <td colspan="8">
+
+            <div class="panel-block" id="panel-{{ p.id }}-buy" style="display: none">
+              <p class="panel-title">Add Spools</p>
+              <form method="post" action="{{ url_for('filament.purchase', fid=p.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="panel-grid">
+                  <div class="field">
+                    <label>Brand <span class="info">(optional)</span></label>
+                    <input name="brand" list="brand-list-{{ p.id }}" placeholder="Overture or Bambu">
+                    <datalist id="brand-list-{{ p.id }}">{% for brand in p.brands %}<option value="{{ brand }}">{% endfor %}</datalist>
+                  </div>
+                  <div class="field">
+                    <label>Spools</label>
+                    <input name="spools" type="number" step="0.01" value="1">
+                  </div>
+                  <div class="field">
+                    <label>Grams per Spool</label>
+                    <input name="grams_per_spool" type="number" step="1"
+                           value="{{ '%.0f' % p.default_spool_g }}">
+                  </div>
+                  <div class="field">
+                    <label>Price per Spool ($)</label>
+                    <input name="price_per_spool" type="number" step="0.01"
+                           placeholder="{{ '%.2f' % p.cost_per_spool if p.cost_per_spool is not none else '21.99' }}">
+                  </div>
+                  <div class="field">
+                    <label>Note</label>
+                    <input name="note" placeholder="Amazon, 2-pack">
+                  </div>
+                </div>
+                <div class="footer-actions">
+                  <span class="info">
+                    What you paid for <em>one</em> spool. This purchase is added to the selected brand, while the inventory total and cost average include every brand in {{ p.material }} {{ p.color_name }}.
+                    {% if p.cost_per_spool is not none %}
+                      You've been averaging <strong>${{ '{:,.2f}'.format(p.cost_per_spool) }}</strong> a spool on this one.
+                    {% endif %}
+                  </span>
+                  <button class="btn primary" type="submit">Add to Stock</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel-block" id="panel-{{ p.id }}-adjust" style="display: none">
+              <p class="panel-title">Correct the Count</p>
+              <form method="post" action="{{ url_for('filament.adjust', fid=p.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="mode" value="waste">
+                <div class="panel-grid wide">
+                  <div class="field">
+                    <label>Grams Wasted</label>
+                    <input name="waste_grams" type="number" step="0.1" placeholder="120">
+                  </div>
+                  <div class="field" style="grid-column: span 2">
+                    <label>What happened</label>
+                    <input name="note" placeholder="Failed at 60% — bed adhesion">
+                  </div>
+                </div>
+                <div class="footer-actions">
+                  <span class="info">Failed prints and purge. Comes off stock, never touches a job's cost.</span>
+                  <button class="btn secondary" type="submit">Log Waste</button>
+                </div>
+              </form>
+              <form method="post" action="{{ url_for('filament.adjust', fid=p.id) }}"
+                    style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="mode" value="personal">
+                <div class="panel-grid wide">
+                  <div class="field">
+                    <label>Grams Used</label>
+                    <input name="personal_grams" type="number" step="0.1" placeholder="200">
+                  </div>
+                  <div class="field" style="grid-column: span 2">
+                    <label>What did you print</label>
+                    <input name="note" placeholder="Shelf bracket for the garage">
+                  </div>
+                </div>
+                <div class="footer-actions">
+                  <span class="info">Something for yourself. Comes off stock, no job, no costing. Two colours? Log each one on its own filament.</span>
+                  <button class="btn secondary" type="submit">Log Personal Print</button>
+                </div>
+              </form>
+              <form method="post" action="{{ url_for('filament.adjust', fid=p.id) }}"
+                    style="margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="mode" value="reconcile">
+                <div class="panel-grid wide">
+                  <div class="field">
+                    <label>Actual Grams on Scale</label>
+                    <input name="actual_grams" type="number" step="0.1"
+                           placeholder="{{ '%.0f' % p.grams_on_hand }}">
+                  </div>
+                  <div class="field" style="grid-column: span 2">
+                    <label>Note</label>
+                    <input name="note" placeholder="Weighed all spools 2026-08-29">
+                  </div>
+                </div>
+                <div class="footer-actions">
+                  <span class="info">
+                    System says <strong>{{ '{:,.0f}'.format(p.grams_on_hand) }} g</strong>.
+                    Weigh the spools, enter the truth, and the difference is logged.
+                    Sliced estimates never count purge — do this monthly or the numbers drift.
+                  </span>
+                  <button class="btn secondary" type="submit">Reconcile</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel-block" id="panel-{{ p.id }}-edit" style="display: none">
+              <p class="panel-title">Edit Filament</p>
+              <form method="post" action="{{ url_for('filament.edit', fid=p.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="panel-grid">
+                  <div class="field">
+                    <label>Material</label>
+                    <input name="material" list="material-list" value="{{ p.material }}" required>
+                  </div>
+                  <div class="field">
+                    <label>Color</label>
+                    <input name="color_name" value="{{ p.color_name }}" required>
+                  </div>
+                  <div class="field">
+                    <label>Brand</label>
+                    <input name="brand" value="{{ p.brand }}">
+                  </div>
+                  <div class="field">
+                    <label>Swatch</label>
+                    <div class="hexpair">
+                      <input type="color" value="{{ p.color_hex or '#ffffff' }}"
+                             onchange="this.nextElementSibling.value=this.value">
+                      <input name="color_hex" value="{{ p.color_hex }}">
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Spool Size (g)</label>
+                    <input name="default_spool_g" type="number" step="1"
+                           value="{{ '%.0f' % p.default_spool_g }}">
+                  </div>
+                  <div class="field">
+                    <label>Reorder At (g)</label>
+                    <input name="reorder_threshold_g" type="number" step="1"
+                           value="{{ '%.0f' % p.reorder_threshold_g }}">
+                  </div>
+                  <div class="field" style="grid-column: span 2">
+                    <label>Notes</label>
+                    <input name="notes" value="{{ p.notes }}">
+                  </div>
+                </div>
+                <div class="footer-actions">
+                  <span class="info">Changing material, color or brand renames the pool — the ledger stays attached.</span>
+                  <button class="btn primary" type="submit">Save Changes</button>
+                </div>
+              </form>
+              <div class="footer-actions" style="border-top: 1px solid var(--line); padding-top: 14px">
+                <span class="info">
+                  {% if p.active %}Archiving hides it from the list and keeps every ledger entry.
+                    Deleting removes it outright — blocked only once a saved job has consumed from it.
+                    To fix a wrong price, use <strong>Ledger → Fix</strong> instead.
+                  {% else %}Archived — restore it to use it again.{% endif %}
+                </span>
+                <div class="row-actions">
+                  <form method="post" action="{{ url_for('filament.toggle', fid=p.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn ghost" type="submit">
+                      {{ 'Archive' if p.active else 'Restore' }}
+                    </button>
+                  </form>
+                  <form method="post" action="{{ url_for('filament.delete', fid=p.id) }}"
+                        data-confirm="Delete {{ p.label }} and every purchase, waste and reconcile entry on it? This cannot be undone.">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn danger" type="submit">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<script nonce="{{ csp_nonce }}">
+// One expandable panel per row, three sections inside it. Clicking the same
+// button again closes it; clicking a different one swaps the section.
+function fpanel(id, section) {
+  const row = document.getElementById("panel-" + id);
+  const target = document.getElementById("panel-" + id + "-" + section);
+  const wasOpen = row.style.display !== "none" && target.style.display !== "none";
+  document.querySelectorAll(".panel-row").forEach(r => r.style.display = "none");
+  document.querySelectorAll(".panel-block").forEach(b => b.style.display = "none");
+  if (!wasOpen) {
+    row.style.display = "";
+    target.style.display = "";
+  }
+}
+</script>
+
+{% endblock %}

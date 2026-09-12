@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · 3DPrintTally{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Your print shop at a glance.{% endblock %}
+{% block content %}
+<div class="stats">
+  <div class="stat"><span>Active Products</span><strong>{{ stats.products }}</strong></div>
+  <div class="stat"><span>Print Jobs</span><strong>{{ stats.jobs }}</strong></div>
+  <div class="stat"><span>Labels Generated</span><strong>{{ stats.labels }}</strong></div>
+</div>
+<div class="grid two">
+  <section class="card">
+    <div class="card-head"><h2>Quick Start</h2></div>
+    <p>Create a print queue, choose a partially-used sheet position if needed, and generate an exact-size PDF.</p>
+    <a class="btn primary" href="{{ url_for('labels') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v5"/></svg>
+      Create Labels
+    </a>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Calibration</h2></div>
+    <p>Print a numbered 30-label calibration page to verify printer alignment before using label stock.</p>
+    <a class="btn secondary" href="{{ url_for('calibration') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      Download Calibration PDF
+    </a>
+  </section>
+</div>
+<section class="card">
+  <div class="card-head"><h2>Recent Print Jobs</h2><a href="{{ url_for('history') }}">View all</a></div>
+  {% if recent %}
+  <table>
+    <thead><tr><th>Date</th><th>Labels</th><th>Starting Position</th></tr></thead>
+    <tbody>
+      {% for j in recent %}
+      <tr><td>{{ j.created_at }}</td><td>{{ j.total_labels }}</td><td>{{ j.start_position }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No labels printed yet.</div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Job Cost History · 3DPrintTally{% endblock %}
+{% block page_title %}Job Cost History{% endblock %}
+{% block page_subtitle %}Every saved job quote — full cost, tax, and profit detail, downloadable as a PDF.{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h2>Saved Jobs</h2>
+    {% if jobs %}
+    <form method="post" action="{{ url_for('clear_job_history') }}" data-confirm="Delete ALL {{ jobs|length }} saved job cost record(s)? This cannot be undone.">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn danger small" type="submit">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Clear All
+      </button>
+    </form>
+    {% endif %}
+  </div>
+{% if jobs %}
+<div class="job-list">
+{% for j in jobs %}
+  <details class="job">
+    <summary>
+      <span><strong>{{ j.job_label }}</strong><small>{{ j.created_at }} · {{ j.order_quantity }} units{% if j.sku %} · {{ j.sku }}{% endif %}{% if j.customer %} · {{ j.customer }}{% endif %}{% if j.overridden %} · <em>overridden</em>{% endif %}</small></span>
+      <span class="badge red">${{ "%.2f"|format(j.detail.result.invoice_total) if not j.detail.result.error else "—" }}</span>
+    </summary>
+    {% set r = j.detail.result %}
+    {% if r.error %}
+      <div class="pricing-error">{{ r.error }}</div>
+    {% else %}
+      {% if r.parts_plan %}
+      <table style="margin-bottom:10px">
+        <thead><tr><th>Part</th><th>Needed</th><th>Runs</th><th>Made</th><th>Spare</th><th>Batch Cost</th><th>Cost / Unit Needed</th></tr></thead>
+        <tbody>
+        {% for p in r.parts_plan %}
+          <tr>
+            <td>{{ p.part_name }}</td>
+            <td>{{ "%g"|format(p.units_needed) }}</td>
+            <td>{{ p.print_runs_required }}</td>
+            <td>{{ "%g"|format(p.units_produced) }}</td>
+            <td>{{ "%g"|format(p.extra_units) }}</td>
+            {# Jobs saved before this per-unit breakdown existed have no
+               cost_per_unit in their stored payload_json — this is a frozen
+               historical snapshot, never recomputed. Degrade gracefully to
+               the original total rather than erroring on an undefined value. #}
+            <td>{% if p.cost_per_unit is defined %}{{ "%g"|format(p.units_produced) }} @ ${{ "%.3f"|format(p.cost_per_unit) }} = {% endif %}${{ "%.2f"|format(p.part_total_cost) }}</td>
+            <td>{% if p.cost_per_unit_needed is defined and p.cost_per_unit_needed is not none %}${{ "%.3f"|format(p.cost_per_unit_needed) }}{% else %}<span class="info">—</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      <table>
+        <thead><tr><th>{{ 'Total Runs' if r.parts_plan else 'Print Runs' }}</th><th>{{ 'Print Time' if r.parts_plan else 'Items Produced' }}</th><th>Production Cost</th><th>Invoice Total</th><th>Gross Profit</th><th>Margin</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            {% if r.parts_plan %}
+              <td>{{ r.parts_plan|sum(attribute='print_runs_required') }}</td>
+              <td>{{ "%.1f"|format(r.total_print_hours) }} h</td>
+            {% else %}
+              <td>{{ r.print_runs_required }}</td>
+              <td>{{ r.total_items_produced }}</td>
+            {% endif %}
+            <td>${{ "%.2f"|format(r.total_true_job_cost) }}</td>
+            <td>${{ "%.2f"|format(r.invoice_total) }}</td>
+            <td>${{ "%.2f"|format(r.gross_profit) }}</td>
+            <td>{{ "%.1f"|format(r.actual_margin * 100) if r.actual_margin is not none else "—" }}%</td>
+            <td class="row-actions">
+              <a class="btn ghost small" href="{{ url_for('job_cost_pdf', job_id=j.id) }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                PDF
+              </a>
+              <a class="btn ghost small" href="{{ url_for('edit_job_cost_redirect', job_id=j.id) }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                Edit
+              </a>
+              <form method="post" action="{{ url_for('delete_job_cost', job_id=j.id) }}" style="display:inline" data-confirm="Delete &quot;{{ j.job_label }}&quot;? This cannot be undone.">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn danger small" type="submit">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  Delete
+                </button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    {% endif %}
+  </details>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty">No job cost calculations saved yet.</div>
+{% endif %}
+</section>
+{% endblock %}

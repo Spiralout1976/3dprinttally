@@ -1,0 +1,606 @@
+{% extends "base.html" %}
+{% block title %}Products · 3DPrintTally{% endblock %}
+{% block page_title %}Products{% endblock %}
+{% block page_subtitle %}Organize products into collections and export their SKUs to QuickBooks Online.{% endblock %}
+{% block content %}
+
+{# ── Shared reference data ─────────────────────────────────────────────────── #}
+{# Department is metadata on the product now, not part of the SKU — see
+   SKU_RE in app.py. This list is autocomplete suggestions only, not a fixed
+   enum: the field is free text, and genuinely blank is correct for a shared
+   component no single department owns. Add new rows here as you expand. #}
+{% set dept_options = [
+  "Deli", "Bakery", "Seafood", "Meat", "Produce", "Culinary",
+  "Floral", "Grocery", "Health & Beauty", "Front End", "Custom Orders",
+] %}
+
+{# Item type codes — autocomplete suggestions only, not a fixed list. This
+   field stays free text on purpose: any code typed by hand works exactly
+   like one from this list. Add new rows here as you build new item types. #}
+{% set type_options = [
+  ("ORG",   "Organizer"),
+  ("CRS",   "Cross"),
+  ("CUST",  "Custom Order"),
+  ("SGN",   "Sign Holder"),
+  ("HOOK",  "Hook"),
+  ("CLIP",  "Clip"),
+  ("FRAME", "Picture Frame"),
+  ("DISP",  "Display Stand"),
+  ("PROT",  "Protector"),
+  ("BASE",  "Base — shared modular component, no department"),
+  ("STEM",  "Stem — shared modular component, no department"),
+] %}
+
+<div class="grid two">
+
+{# ── Add Product ────────────────────────────────────────────────────────────── #}
+<section class="card">
+  <div class="card-head">
+    <h2>Add Product</h2>
+    <a class="btn ghost small" href="{{ url_for('guide') }}" target="_blank" rel="noopener"
+       title="Opens the step-by-step Product Guide in a new tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      Product Guide
+    </a>
+  </div>
+  <form method="post" class="form-grid" id="add-product-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="field-note" style="grid-column:1/-1;margin:0 0 4px">
+      Pick an Item Type, name your product, then choose or type a collection.
+      SKU numbering continues across collections: ORG-001 stays ORG-001 if you move it.
+    </p>
+
+    <div class="field">
+      <label>Item Type</label>
+      <input id="sku-type" list="type-list" placeholder="e.g. ORG, CRS, SGN, CUST"
+             maxlength="10" autocomplete="off" style="text-transform:uppercase">
+      <datalist id="type-list">
+        {% for code, label in type_options %}
+          <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </datalist>
+    </div>
+
+    <div class="field" style="grid-column:1/-1">
+      <label>Generated SKU &nbsp;<span id="sku-status" style="font-weight:normal;font-size:0.8em;opacity:0.6"></span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="sku-preview" name="sku" value="{{ add_form.sku }}" placeholder="Select an Item Type above" required readonly
+               style="flex:1;font-family:monospace;font-weight:bold;background:var(--bg-alt,#f5f5f5)">
+        <button type="button" class="btn ghost small" onclick="fetchNextSku()" title="Re-check next available number">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="field"><label>Product Name</label><input name="product_name" value="{{ add_form.product_name }}" placeholder="Pen Holder" required></div>
+    <div class="field"><label>Material</label><input name="material" value="{{ add_form.material }}" placeholder="PETG"></div>
+    <div class="field">
+      <label>Department <span style="font-weight:normal;opacity:0.6">— blank for a shared part</span></label>
+      <input name="department" value="{{ add_form.department }}" placeholder="e.g. Meat, Bakery" list="dept-list" autocomplete="off">
+      <datalist id="dept-list">
+        {% for label in dept_options %}
+          <option value="{{ label }}">
+        {% endfor %}
+      </datalist>
+    </div>
+    <div class="field">
+      <label>Collection</label>
+      <input name="category" value="{{ add_form.category }}" placeholder="Choose or type, e.g. Office Organization" list="category-list" autocomplete="off">
+      <span class="field-note">New names become reusable choices when you save.</span>
+    </div>
+    <div class="field"><label>Notes</label><input name="notes" value="{{ add_form.notes }}" placeholder="Optional"></div>
+
+    <div class="section-divider" style="grid-column:1/-1">First Printed Part <span style="font-weight:normal;opacity:0.6">— optional, straight from Bambu Studio</span></div>
+    <p class="field-note" style="grid-column:1/-1;margin:0 0 4px">
+      Fill these in and the product is costed the moment it's created. Leave blank and add parts later via Edit.
+      Multi-part products (holder + stem) get their extra parts added in Edit.
+    </p>
+    <div class="field"><label>Qty on Plate</label><input name="qty_on_plate" type="number" step="1" min="0" value="{{ add_form.qty_on_plate }}" placeholder="e.g. 4"></div>
+    <div class="field"><label>Filament Used — Plate (g)</label><input name="filament_used_g" type="number" step="0.01" min="0" value="{{ add_form.filament_used_g }}" placeholder="e.g. 55.79"></div>
+    <div class="field"><label>Filament Cost — Plate ($)</label><input name="filament_cost" type="number" step="0.01" min="0" value="{{ add_form.filament_cost }}" placeholder="e.g. 1.67"></div>
+    <div class="field"><label>Print Time</label><input name="print_time_text" value="{{ add_form.print_time_text }}" placeholder="e.g. 1h 50m"></div>
+    <div class="field"><label>Active Labor (min, blank = default)</label><input name="active_labor_min" type="number" step="0.5" min="0" value="{{ add_form.active_labor_min }}" placeholder="Default 2"></div>
+
+    <button class="btn primary" type="submit" style="grid-column:1/-1">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      Add Product
+    </button>
+  </form>
+  <p class="field-note" style="margin-top:10px">Photo, extra parts, STL/3MF filenames, nozzle size and layer height are added after creation via Edit.</p>
+</section>
+
+{# ── CSV Import / Export ────────────────────────────────────────────────────── #}
+<section class="card">
+  <div class="card-head"><h2>CSV Import / Export</h2></div>
+  <p>Import columns: <code>SKU</code>, <code>Product Name</code> (required). Optional: <code>Material</code>, <code>Notes</code>, <code>Category</code>, <code>Qty on Plate</code>, <code>Filament Used (g)</code>, <code>Filament Cost ($)</code>, <code>Print Time</code>, <code>Active Labor Min</code>, <code>Actual Selling Price ($)</code>, <code>STL Filename</code>, <code>3MF Filename</code>, <code>Nozzle Size (mm)</code>, <code>Layer Height (mm)</code>. Photo uploads aren't supported via CSV — add those individually via Edit.</p>
+  <form method="post" action="{{ url_for('import_products') }}" enctype="multipart/form-data" class="inline-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="file" name="file" accept=".csv" required>
+    <button class="btn primary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+      Import CSV
+    </button>
+  </form>
+  <a class="btn secondary" href="{{ url_for('export_products') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+    Export Catalog CSV
+  </a>
+  <hr>
+  <h3>QuickBooks Online</h3>
+  <p>Download one row per active product with its SKU, product name, and optional collection. Review and select the products you want to import.</p>
+  <a class="btn primary" href="{{ url_for('quickbooks_export', collection=collection, q=q) }}">Export for QuickBooks</a>
+</section>
+
+</div>
+
+{# ── Catalog ─────────────────────────────────────────────────────────────────── #}
+<section class="card">
+  <div class="card-head">
+    <h2>Catalog</h2>
+    <form method="get" class="search" style="flex-wrap:wrap">
+      <input name="q" value="{{ q }}" placeholder="Search SKU, product, collection…" aria-label="Search catalog">
+      <input name="collection" value="{{ collection }}" list="category-list" placeholder="All collections" aria-label="Filter by collection">
+      <button class="btn secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Search
+      </button>
+      {% if q or collection %}<a class="btn ghost small" href="{{ url_for('products') }}">Clear filters</a>{% endif %}
+    </form>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th>SKU</th><th>Department</th><th>Product</th><th>Collection</th><th>Parts</th><th>True Cost</th><th>Selling</th><th>Margin</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for p in products %}
+      <tr class="{{ 'muted-row' if not p.active else '' }}">
+        <td>
+          {% if p.photo_filename %}
+            <img class="thumb" src="{{ url_for('product_photo', filename=p.photo_filename) }}" alt="{{ p.product_name }}">
+          {% else %}
+            <div class="thumb thumb-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+            </div>
+          {% endif %}
+        </td>
+        <td><code>{{ p.sku }}</code></td>
+        <td>{% if p.department %}<span class="badge gray">{{ p.department }}</span>{% endif %}</td>
+        <td>{{ p.product_name }}</td>
+        <td>{{ p.category or '—' }}</td>
+        <td>
+          {% if p.parts %}
+            <span class="badge {{ 'gray' if p.parts|length == 1 else 'green' }}">{{ p.parts|length }}</span>
+          {% else %}
+            <span class="badge gray">0</span>
+          {% endif %}
+        </td>
+        {% if p.pricing and not p.pricing.error %}
+          <td><strong>${{ "%.3f"|format(p.pricing.true_cost_per_item) }}</strong>
+            {% if p.parts|selectattr('filament_derived')|list or p.parts|selectattr('filament_overridden')|list %}
+              <span class="info">est.</span>
+            {% endif %}
+          </td>
+          <td>{{ ('$%.2f'|format(p.actual_selling_price)) if p.actual_selling_price else '—' }}</td>
+          <td>
+            {% if p.pricing.actual_margin is not none %}
+              <span class="badge {{ 'green' if p.pricing.actual_margin >= 0.5 else 'gray' }}">{{ "%.0f"|format(p.pricing.actual_margin * 100) }}%</span>
+            {% else %}
+              <span style="opacity:0.5">retail ${{ "%.2f"|format(p.pricing.suggested_retail) }}</span>
+            {% endif %}
+          </td>
+        {% elif p.pricing and p.pricing.error %}
+          <td colspan="3" style="color:var(--danger,#c0392b);font-size:0.85em">{{ p.pricing.error }}</td>
+        {% else %}
+          <td colspan="3" style="opacity:0.5;font-size:0.85em">Not costed — add a part</td>
+        {% endif %}
+        <td><span class="badge {{ 'green' if p.active else 'gray' }}">{{ 'Active' if p.active else 'Archived' }}</span></td>
+        <td class="row-actions">
+          <button type="button" class="btn ghost small" onclick="toggleEdit('{{ p.sku|replace('-','_') }}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            Edit
+          </button>
+          <form method="post" action="{{ url_for('toggle_product', sku=p.sku) }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn ghost small">{{ 'Archive' if p.active else 'Restore' }}</button>
+          </form>
+        </td>
+      </tr>
+
+      {# Edit row — id uses underscores so it's a valid CSS/JS id selector #}
+      <tr id="edit-row-{{ p.sku|replace('-','_') }}" class="edit-row" style="display:none">
+        <td colspan="10">
+          <form method="post" action="{{ url_for('edit_product', sku=p.sku) }}" class="edit-form" enctype="multipart/form-data">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="section-divider" style="grid-column:1/-1">Identity</div>
+            <div class="field compact">
+              <label>SKU &nbsp;<span style="font-size:0.78em;opacity:0.55;font-weight:normal">(rename carefully — label history won't update)</span></label>
+              <input name="sku" value="{{ p.sku }}" required
+                     style="font-family:monospace;font-weight:bold;text-transform:uppercase"
+                     autocomplete="off">
+            </div>
+            <div class="field">
+              <label>Product Name</label>
+              <input name="product_name" value="{{ p.product_name }}" required>
+            </div>
+            <div class="field">
+              <label>Material</label>
+              <input name="material" value="{{ p.material or '' }}">
+            </div>
+            <div class="field">
+              <label>Department <span style="font-weight:normal;opacity:0.6">— blank for a shared part</span></label>
+              <input name="department" value="{{ p.department or '' }}" list="dept-list" autocomplete="off"
+                     placeholder="e.g. Meat, Bakery">
+            </div>
+            <div class="field">
+              <label>Collection</label>
+              <input name="category" value="{{ p.category or '' }}" list="category-list" autocomplete="off"
+                     placeholder="Choose or type a collection">
+            </div>
+            <div class="field">
+              <label>Notes</label>
+              <input name="notes" value="{{ p.notes or '' }}">
+            </div>
+
+            <div class="section-divider" style="grid-column:1/-1">Photo</div>
+            <div class="photo-field" style="grid-column:1/-1">
+              {% if p.photo_filename %}
+                <img class="thumb-large" src="{{ url_for('product_photo', filename=p.photo_filename) }}" alt="{{ p.product_name }}">
+                <label class="check"><input type="checkbox" name="remove_photo" value="1"> Remove current photo</label>
+              {% endif %}
+              <input type="file" name="photo" accept=".jpg,.jpeg,.png,.webp">
+            </div>
+
+            <div class="section-divider" style="grid-column:1/-1">Assembly &amp; Price</div>
+            <div class="field">
+              <label>Assembly Labor (min per finished item)</label>
+              <input name="assembly_labor_min" type="number" step="0.5" min="0" value="{{ p.assembly_labor_min if p.assembly_labor_min is not none else '' }}" placeholder="0 — time to put the parts together">
+            </div>
+            <div class="field">
+              <label>Actual Selling Price ($, optional)</label>
+              <input name="actual_selling_price" type="number" step="0.01" min="0" value="{{ p.actual_selling_price if p.actual_selling_price is not none else '' }}" placeholder="What you actually charge">
+            </div>
+
+            <div class="edit-actions" style="grid-column:1/-1">
+              <button type="submit" class="btn primary small">Save Changes</button>
+              <button type="button" class="btn ghost small" onclick="toggleEdit('{{ p.sku|replace('-','_') }}')">Cancel</button>
+            </div>
+          </form>
+
+          {# ── Bill of materials ──────────────────────────────────────────────
+             Each part is its own form. They sit OUTSIDE the product form above
+             because HTML forbids nesting forms. #}
+          <div class="section-divider" style="margin-top:18px">Printed Parts ({{ p.parts|length }})</div>
+          <p class="field-note">Every printed piece that makes up one finished product. A one-piece product has a single part. Values come straight from Bambu Studio, for the whole plate.</p>
+          <p class="field-note"><strong>No colour bound to the SKU.</strong> A SKU is still the recipe, not the colour — {{ p.sku }} is the same part in white or blue. You choose the filament per job on the <a href="{{ url_for('job_calculator') }}">Job Calculator</a>, and that is where the exact cost and the stock deduction happen.</p>
+          <p class="field-note"><strong>Filament Cost below is an estimate, not a binding choice.</strong> Link a filament pool and this page prices the part from what that colour has actually cost, blended across every brand you buy it from — Hobby Lobby white and Bambu white average together. That number is <em>for this page's estimate only</em>; it never limits which colour a customer can actually get, and the real cost always comes from whatever colour is picked at quote time. Leave it unlinked, or tick Override, to keep typing the figure by hand.</p>
+
+          {% for part in p.parts %}
+          <form method="post" action="{{ url_for('edit_product_part', part_id=part.id) }}" class="edit-form" style="border-left:3px solid var(--accent,#888);padding-left:12px;margin-bottom:14px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="field compact"><label>Part Name</label><input name="part_name" value="{{ part.part_name }}" required></div>
+            <div class="field"><label>Qty per Product</label><input name="qty_per_product" type="number" step="0.5" min="0.5" value="{{ part.qty_per_product }}"></div>
+            <div class="field"><label>Qty on Plate</label><input name="qty_on_plate" type="number" step="1" min="1" value="{{ part.qty_on_plate if part.qty_on_plate is not none else '' }}" required></div>
+            <div class="field"><label>Print Time</label><input name="print_time_text" value="{{ part.print_time_text or '' }}" placeholder="e.g. 1h 50m" required></div>
+            <div class="field"><label>Filament Used — Plate (g)</label><input id="g-part-{{ part.id }}" name="filament_used_g" type="number" step="0.01" min="0" value="{{ part.filament_used_g if part.filament_used_g is not none else '' }}"></div>
+            <div class="field">
+              <label>Filament Pool <span class="info">(optional — for this page's estimate)</span></label>
+              <div class="colour-stack" id="cs-part-{{ part.id }}" data-pid="part-{{ part.id }}"></div>
+              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColourPart('part-{{ part.id }}')">+ colour</button>
+            </div>
+            <div class="field"><label>Filament Cost — Plate ($) <span class="info">hand-typed</span></label>
+              <input id="c-part-{{ part.id }}" name="filament_cost" type="number" step="0.01" min="0" value="{{ part.filament_typed_cost if part.filament_typed_cost is not none else '' }}">
+              {% if part.filament_type_id %}
+              <label class="check" style="display:inline-flex;align-items:center;gap:6px;margin-top:6px">
+                <input type="checkbox" name="filament_cost_override" value="1" {{ 'checked' if part.filament_overridden else '' }}>
+                <span>Override — use the typed value above instead of the derived estimate</span>
+              </label>
+              {% endif %}
+              {% if part.filament_overridden %}
+                <span class="info">Overridden — using your typed ${{ "%.3f"|format(part.filament_cost) }}/plate. {{ part.filament_pool_label }} would derive to
+                  {% if part.filament_derived_cost is not none %}${{ "%.3f"|format(part.filament_derived_cost) }}/plate{% else %}no estimate yet (never purchased){% endif %}.</span>
+              {% elif part.filament_derived %}
+                <span class="info">Estimate above is derived live from <strong>{{ part.filament_pool_label }}</strong>: ${{ "%.3f"|format(part.filament_cost) }}/plate. Tick Override to use the typed value instead.</span>
+              {% elif part.filament_type_id %}
+                <span class="info">Linked to {{ part.filament_pool_label or 'a filament' }}, but that colour has no purchase history yet — using the typed figure until it does.</span>
+              {% endif %}
+            </div>
+            <div class="field"><label>Active Labor (min, blank = default)</label><input name="active_labor_min" type="number" step="0.5" min="0" value="{{ part.active_labor_min if part.active_labor_min is not none else '' }}" placeholder="Default 2"></div>
+            <div class="field"><label>Material</label><input name="material" value="{{ part.material or '' }}" placeholder="PETG"></div>
+            <div class="field"><label>Nozzle Size (mm)</label><input name="nozzle_size" type="number" step="0.01" min="0" value="{{ part.nozzle_size if part.nozzle_size is not none else '' }}" placeholder="0.4"></div>
+            <div class="field"><label>Layer Height (mm)</label><input name="layer_height" type="number" step="0.01" min="0" value="{{ part.layer_height if part.layer_height is not none else '' }}" placeholder="0.2"></div>
+            <div class="field"><label>STL Filename</label><input name="stl_filename" value="{{ part.stl_filename or '' }}" placeholder="{{ p.sku }}-{{ part.part_name|lower|replace(' ','-') }}.stl"></div>
+            <div class="field"><label>3MF Filename</label><input name="threemf_filename" value="{{ part.threemf_filename or '' }}" placeholder="{{ p.sku }}-{{ part.part_name|lower|replace(' ','-') }}.3mf"></div>
+            <div class="edit-actions" style="grid-column:1/-1">
+              <button type="submit" class="btn primary small">Save Part</button>
+              {% if p.parts|length > 1 %}
+                <button type="submit" class="btn ghost small" formaction="{{ url_for('delete_product_part', part_id=part.id) }}">Remove Part</button>
+              {% endif %}
+            </div>
+          </form>
+          {% endfor %}
+
+          <form method="post" action="{{ url_for('add_product_part', sku=p.sku) }}" class="edit-form" style="border-left:3px dashed var(--accent,#888);padding-left:12px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="field compact"><label>New Part Name</label><input name="part_name" placeholder="e.g. Stem" required></div>
+            <div class="field"><label>Qty per Product</label><input name="qty_per_product" type="number" step="0.5" min="0.5" value="1"></div>
+            <div class="field"><label>Qty on Plate</label><input name="qty_on_plate" type="number" step="1" min="1" placeholder="e.g. 12" required></div>
+            <div class="field"><label>Print Time</label><input name="print_time_text" placeholder="e.g. 1h 05m" required></div>
+            <div class="field"><label>Filament Used — Plate (g)</label><input id="g-part-new-{{ p.sku }}" name="filament_used_g" type="number" step="0.01" min="0"></div>
+            <div class="field">
+              <label>Filament Pool <span class="info">(optional — for this page's estimate)</span></label>
+              <div class="colour-stack" id="cs-part-new-{{ p.sku }}" data-pid="part-new-{{ p.sku }}"></div>
+              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColourPart('part-new-{{ p.sku }}')">+ colour</button>
+            </div>
+            <div class="field"><label>Filament Cost — Plate ($)</label><input name="filament_cost" type="number" step="0.01" min="0" placeholder="rough estimate"></div>
+            <div class="field"><label>Active Labor (min, blank = default)</label><input name="active_labor_min" type="number" step="0.5" min="0" placeholder="Default 2"></div>
+            <div class="field"><label>Material</label><input name="material" placeholder="PETG"></div>
+            <div class="edit-actions" style="grid-column:1/-1">
+              <button type="submit" class="btn primary small">+ Add Part</button>
+            </div>
+          </form>
+
+          {# ── Assembly components ────────────────────────────────────────────
+             Separate from Printed Parts above: a part is a printed piece THIS
+             SKU is made of; a component is a whole OTHER sellable product this
+             SKU is assembled from. One level only — see add_assembly_component()
+             in app.py. A component SKU that is itself already an assembly, or a
+             SKU that is itself already someone else's component, gets rejected
+             server-side with a plain error; nothing here tries to pre-filter
+             the picker, since the same check has to be authoritative anyway. #}
+          <div class="section-divider" style="margin-top:18px">Assembly Components ({{ p.assembly_components|length }})</div>
+          <p class="field-note">A sellable product built from OTHER sellable products instead of printed directly — a kit. Its cost is the sum of what each component actually costs right now, plus this row's own Assembly Labor below. One level only: a component can't itself be an assembly.</p>
+          {% for ac in p.assembly_components %}
+            <div class="edit-form" style="border-left:3px solid var(--accent,#888);padding-left:12px;margin-bottom:10px;display:flex;gap:12px;align-items:center">
+              <span><code>{{ ac.component_sku }}</code> × {{ "%g"|format(ac.qty) }}</span>
+              <form method="post" action="{{ url_for('delete_assembly_component', comp_id=ac.id) }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn ghost small" type="submit">Remove</button>
+              </form>
+            </div>
+          {% endfor %}
+          <form method="post" action="{{ url_for('add_assembly_component', sku=p.sku) }}" class="edit-form" style="border-left:3px dashed var(--accent,#888);padding-left:12px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="field compact"><label>Component SKU</label><input name="component_sku" placeholder="e.g. BASE-001" style="text-transform:uppercase" required></div>
+            <div class="field"><label>Qty</label><input name="qty" type="number" step="1" min="1" value="1"></div>
+            <div class="edit-actions" style="grid-column:1/-1">
+              <button type="submit" class="btn primary small">+ Add Component</button>
+            </div>
+          </form>
+
+          {% if p.pricing %}
+            {% if p.pricing.error %}
+              <div class="pricing-error" style="margin-top:14px">{{ p.pricing.error }}</div>
+            {% else %}
+              <div class="pricing-results" style="margin-top:14px">
+                {% if p.assembly_components %}
+                <div class="pricing-margins" style="margin-bottom:8px">
+                  {% for c in p.pricing.components %}
+                    <span>{{ c.sku }}: ${{ "%.3f"|format(c.true_cost_per_item) }} × {{ "%g"|format(c.qty) }} = ${{ "%.3f"|format(c.line_cost) }}</span>
+                  {% endfor %}
+                  {% if p.pricing.assembly_cost %}<span>Assembly labor: ${{ "%.3f"|format(p.pricing.assembly_cost) }}</span>{% endif %}
+                </div>
+                {% elif p.pricing.part_count > 1 %}
+                <div class="pricing-margins" style="margin-bottom:8px">
+                  {% for c in p.pricing.parts %}
+                    <span>{{ c.part_name }}: ${{ "%.3f"|format(c.cost_per_part) }} × {{ "%g"|format(c.qty_per_product) }}</span>
+                  {% endfor %}
+                  {% if p.pricing.assembly_cost %}<span>Assembly: ${{ "%.3f"|format(p.pricing.assembly_cost) }}</span>{% endif %}
+                </div>
+                {% endif %}
+                {% set derived_parts = p.parts|selectattr('filament_derived')|list %}
+                {% set overridden_parts = p.parts|selectattr('filament_overridden')|list %}
+                {% if derived_parts or overridden_parts %}
+                <div class="field-note" style="margin-bottom:8px">
+                  <strong>True Cost / Item below includes a filament ESTIMATE, not a binding colour.</strong>
+                  {% if derived_parts %}{{ derived_parts|map(attribute='part_name')|join(', ') }}
+                  {{ 'is' if derived_parts|length == 1 else 'are' }} priced from
+                  {{ derived_parts|map(attribute='filament_pool_label')|unique|join(', ') }}, blended across every
+                  brand of that colour.{% endif %}
+                  {% if overridden_parts %}{{ overridden_parts|map(attribute='part_name')|join(', ') }}
+                  {{ 'is' if overridden_parts|length == 1 else 'are' }} using a hand-typed override instead of the
+                  linked estimate.{% endif %}
+                  The real cost is always set by the colour actually picked at quote time on the
+                  <a href="{{ url_for('job_calculator') }}">Job Calculator</a>.
+                </div>
+                {% elif p.assembly_components %}
+                <p class="field-note" style="margin-bottom:8px">Any filament estimate on a component shows on that
+                  component's own Printed Parts — check there before trusting a linked figure here.</p>
+                {% endif %}
+                <div class="pricing-grid">
+                  <div class="pricing-stat"><span>True Cost / Item</span><strong>${{ "%.3f"|format(p.pricing.true_cost_per_item) }}</strong></div>
+                  <div class="pricing-stat highlight"><span>Suggested Wholesale</span><strong>${{ "%.2f"|format(p.pricing.suggested_wholesale) }}</strong></div>
+                  <div class="pricing-stat highlight"><span>Suggested Retail</span><strong>${{ "%.2f"|format(p.pricing.suggested_retail) }}</strong></div>
+                  {% if p.pricing.filament_g_per_item is defined %}
+                  <div class="pricing-stat"><span>Filament / Item</span><strong>{{ "%.1f"|format(p.pricing.filament_g_per_item) }} g</strong></div>
+                  <div class="pricing-stat"><span>Print Time / Item</span><strong>{{ "%.0f"|format(p.pricing.print_minutes_per_item) }} min</strong></div>
+                  {% endif %}
+                  {% if p.pricing.actual_profit is not none %}
+                  <div class="pricing-stat"><span>Actual Profit / Item</span><strong>${{ "%.2f"|format(p.pricing.actual_profit) }}</strong></div>
+                  <div class="pricing-stat"><span>Actual Margin</span><strong>{{ "%.1f"|format(p.pricing.actual_margin * 100) }}%</strong></div>
+                  {% endif %}
+                </div>
+                <div class="pricing-margins">
+                  <span>40%: ${{ "%.2f"|format(p.pricing.margin_40) }}</span>
+                  <span>50%: ${{ "%.2f"|format(p.pricing.margin_50) }}</span>
+                  <span>60%: ${{ "%.2f"|format(p.pricing.margin_60) }}</span>
+                  <span>70%: ${{ "%.2f"|format(p.pricing.margin_70) }}</span>
+                  <span>80%: ${{ "%.2f"|format(p.pricing.margin_80) }}</span>
+                </div>
+              </div>
+            {% endif %}
+          {% else %}
+            <div class="field-note" style="margin-top:14px">No parts or components yet — add either above and this product will be costed.</div>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{# Collections reuse the category field for existing data and CSV compatibility. #}
+<datalist id="category-list">
+  {% for name in collections %}<option value="{{ name }}">{% endfor %}
+</datalist>
+
+<script nonce="{{ csp_nonce }}">
+// ── Edit row toggle ───────────────────────────────────────────────────────────
+function toggleEdit(safeId) {
+  const row    = document.getElementById("edit-row-" + safeId);
+  const isOpen = row.style.display !== "none";
+  document.querySelectorAll(".edit-row").forEach(r => r.style.display = "none");
+  row.style.display = isOpen ? "none" : "table-row";
+}
+
+// ── SKU Builder ───────────────────────────────────────────────────────────────
+let _skuTimer = null;
+
+function fetchNextSku() {
+  const type = (document.getElementById('sku-type').value || '').trim().toUpperCase();
+  const preview = document.getElementById('sku-preview');
+  const status  = document.getElementById('sku-status');
+
+  if (!type) {
+    preview.value       = '';
+    preview.placeholder = 'Select an Item Type above';
+    status.textContent  = '';
+    return;
+  }
+
+  status.textContent = '⟳ checking…';
+  fetch('/api/next-sku?type_code=' + encodeURIComponent(type))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        status.textContent = '⚠ ' + data.error;
+        preview.value = '';
+        return;
+      }
+      preview.value      = data.sku;
+      status.textContent = '✓ next available — ' + data.prefix;
+    })
+    .catch(function() {
+      status.textContent = '⚠ could not reach server';
+    });
+}
+
+function debouncedFetch() {
+  clearTimeout(_skuTimer);
+  _skuTimer = setTimeout(fetchNextSku, 300);
+}
+
+['sku-type'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', debouncedFetch);
+});
+
+// Guard: don't submit with an empty SKU
+document.getElementById('add-product-form').addEventListener('submit', function(e) {
+  var sku = document.getElementById('sku-preview').value.trim();
+  if (!sku) {
+    e.preventDefault();
+    document.getElementById('sku-status').textContent = '⚠ select an Item Type first';
+  }
+});
+
+// ── Filament pool picker (Products-page estimate) ───────────────────────────
+// Ported from the Job Calculator's own colour-stack (same field naming,
+// {prefix}filp_{pid}_{n} / {prefix}filg_{pid}_{n}, prefix always "" here),
+// because a part can carry more than one colour in a single print exactly
+// the same way a job's custom row can. The real difference from the Job
+// Calculator: this widget never writes into the Filament Cost box. That
+// input stays the hand-typed fallback/override on this page — the derived
+// number it can be overridden against is computed server-side from the
+// material+colour blend and shown as read-only text next to it.
+//
+// Every part form on this page submits independently (HTML forbids nesting
+// forms, so each part already has its own <form>), so every stack's fields
+// are named identically — filp_part_0, filg_part_0, etc. — regardless of
+// which part's markup they live in. That's safe: only one form is ever
+// submitted at a time, and _apply_filament_link() in app.py reads the same
+// constant "part" pid on every add/edit route.
+const FIL_OPTIONS = [
+{%- for f in filament_pools %}
+  {id: "{{ f.id }}", label: {{ (f.label ~ (' · $' ~ '%.4f'|format(filament_pooled_rates.get(f.id)) ~ '/g blended' if filament_pooled_rates.get(f.id) is not none else ' · no purchases yet'))|tojson }}}{{ "," if not loop.last }}
+{%- endfor %}
+];
+
+function colourOptionsPart(selected) {
+  return ['<option value="">— none —</option>'].concat(
+    FIL_OPTIONS.map(function (f) {
+      return '<option value="' + f.id + '"' +
+             (String(selected || "") === f.id ? " selected" : "") + '>' + escapeHtml(f.label) + '</option>';
+    })).join("");
+}
+
+function addColourPart(domId, preset) {
+  const stack = document.getElementById("cs-" + domId);
+  if (!stack) return;
+  const n = stack.querySelectorAll(".colour-row").length;
+  preset = preset || {};
+  if (n === 1) {
+    const gramsBox = document.getElementById("g-" + domId);
+    const firstRow = stack.querySelector(".colour-row");
+    const firstGrams = firstRow ? firstRow.querySelector(".cgrams") : null;
+    if (gramsBox && firstGrams && !firstGrams.value) {
+      const existing = parseFloat(gramsBox.value);
+      if (!isNaN(existing) && existing > 0) firstGrams.value = existing;
+    }
+  }
+  const row = document.createElement("div");
+  row.className = "colour-row";
+  row.style.cssText = "display:flex;gap:5px;align-items:center;margin-bottom:4px";
+  row.innerHTML =
+    '<select name="filp_part_' + n + '" style="min-width:0;flex:1" ' +
+      'onchange="syncPartColours(\'' + domId + '\')">' +
+      colourOptionsPart(preset.filament_type_id) + '</select>' +
+    '<input name="filg_part_' + n + '" type="number" step="0.01" min="0" ' +
+      'class="cgrams" placeholder="g" style="width:5.5em;display:none" ' +
+      'value="' + escapeHtml((preset.grams != null ? preset.grams : "")) + '" ' +
+      'oninput="syncPartColours(\'' + domId + '\')">' +
+    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this colour" ' +
+             'onclick="this.parentNode.remove();syncPartColours(\'' + domId + '\')">&times;</button>' : '');
+  stack.appendChild(row);
+  syncPartColours(domId);
+}
+
+function syncPartColours(domId) {
+  const stack = document.getElementById("cs-" + domId);
+  if (!stack) return;
+  const rows = stack.querySelectorAll(".colour-row");
+  const multi = rows.length > 1;
+  const gramsBox = document.getElementById("g-" + domId);
+  let total = 0;
+  rows.forEach(function (r) {
+    const gi = r.querySelector(".cgrams");
+    gi.style.display = multi ? "" : "none";
+    let g = parseFloat(gi.value);
+    if (!multi && (isNaN(g) || g <= 0) && gramsBox) g = parseFloat(gramsBox.value);
+    if (g > 0) total += g;
+  });
+  if (gramsBox) {
+    if (multi) {
+      gramsBox.readOnly = true;
+      gramsBox.style.opacity = "0.65";
+      gramsBox.title = "Sum of the colours on this part";
+      gramsBox.value = total.toFixed(2).replace(/\.00$/, "");
+    } else {
+      gramsBox.readOnly = false;
+      gramsBox.style.opacity = "1";
+      gramsBox.title = "";
+    }
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const PART_DRAWS = {{ part_draws_seed|tojson }};
+  document.querySelectorAll(".colour-stack").forEach(function (st) {
+    const domId = st.dataset.pid;
+    const saved = PART_DRAWS[domId] || [];
+    if (saved.length) { saved.forEach(function (d) { addColourPart(domId, d); }); }
+    else { addColourPart(domId); }
+  });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+</script>
+{% endblock %}

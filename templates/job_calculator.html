@@ -1,0 +1,720 @@
+{% extends "base.html" %}
+{% block title %}Job Calculator · 3DPrintTally{% endblock %}
+{% block page_title %}Job Cost Calculator{% endblock %}
+{% block page_subtitle %}Cost out a full customer order across multiple print runs — batching, tax, and profit included.{% endblock %}
+{% block content %}
+{# ── SECTION 1 — Parts. Pick one at a time; each Add appends pre-filled rows
+      to the Parts of Product table below and never clears or locks anything.
+      The picker resets after every Add, the part just added shows as a
+      removable chip and disappears from the dropdown until removed. Sits
+      outside the main <form> — it and the per-row SKU pickers only ever
+      fetch (GET /api/job-parts/<sku>) and write into the DOM, nothing here
+      submits by itself. ────────────────────────────────────────────────── #}
+<section class="card">
+  <div class="card-head"><h2>Parts</h2></div>
+  <p class="field-note" style="margin:0 0 8px">
+    Pick the parts that make up this job. Add one at a time — each becomes a pre-filled row in
+    Parts of Product below (grams and filament from the catalog; you enter print time yourself
+    from Bambu Studio). A part won't be offered again until you remove it below. Grouped by SKU
+    type (BASE, STEM, SGN…) so the list stays usable as the catalog grows.
+  </p>
+  <input id="parts-filter" type="text" placeholder="Search SKU, product, collection, or department…"
+         style="width:100%;max-width:520px;margin-bottom:8px" autocomplete="off">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <select id="parts-picker" size="8" style="min-width:320px;width:100%;max-width:520px"></select>
+    <button type="button" class="btn secondary" onclick="addPickedPart()">+ Add</button>
+  </div>
+  <div id="picked-parts-list" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"></div>
+  <div style="margin-top:10px">
+    <button type="button" class="btn ghost" onclick="toggleSaveAssembly()">Save these parts as an assembly</button>
+  </div>
+  <div id="save-assembly-panel" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+    <p class="field-note" style="margin:0 0 8px">
+      Names the catalog products currently loaded into the parts table below and stores them as
+      one assembly, so next time you pick the finished item instead of its pieces. Rows with no
+      source SKU (hand-typed) aren't included.
+    </p>
+    <form method="post" action="{{ url_for('save_assembly_from_job') }}" id="save-assembly-form" class="inline-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="sku" placeholder="New or existing assembly SKU, e.g. SGN-001" style="text-transform:uppercase" required>
+      <input name="product_name" placeholder="Name, e.g. Deli Sign Complete" required>
+      <input name="department" placeholder="Department (optional)">
+      <button type="submit" class="btn primary">Save Assembly</button>
+    </form>
+  </div>
+</section>
+
+{% if edit_job_id %}
+<section class="card" style="border-color:var(--accent, #cc1a1a)">
+  <p class="field-note" style="margin:0">
+    <strong>Editing saved job #{{ edit_job_id }}.</strong> Change anything below and
+    save to overwrite this record in place — there is no separate draft or history
+    kept for it, the same way there wasn't before this record had inputs to reload
+    at all. <a href="{{ url_for('job_history') }}">Cancel and go back to Job History</a>
+    without saving.
+  </p>
+</section>
+{% endif %}
+
+<section class="card">
+  <form method="post" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="sku" id="primary-sku" value="{{ form_values.sku }}">
+    {% if edit_job_id %}<input type="hidden" name="edit_job_id" value="{{ edit_job_id }}">{% endif %}
+
+    {# ── SECTION 2 — Product. What the parts picked in Section 1 build.
+          Purely descriptive: never read by calculate_job_cost_from_parts. ── #}
+    <div class="section-divider" style="grid-column:1/-1">Product</div>
+    <p class="field-note" style="grid-column:1/-1">
+      What the parts picked above build. Parts BASE-001, SGN-001 and STEM-001 might make up
+      "Meat Full Service Case" — the parts are the pieces on the plate; this is the thing you're
+      actually quoting.
+    </p>
+    <div class="field">
+      <label>Product</label>
+      <input name="product_name" value="{{ form_values.product_name }}" placeholder="e.g. Meat Full Service Case">
+    </div>
+    <div class="field">
+      <label>Department</label>
+      <input name="department" value="{{ form_values.department }}" placeholder="e.g. Meat, Bakery" list="dept-list" autocomplete="off">
+    </div>
+
+    {# ── SECTION 3 — Parts of Product. One row per part picked in Section 1,
+          plus any hand-typed or per-row-swapped-in rows. ────────────────── #}
+    <div class="section-divider" style="grid-column:1/-1">Parts of Product</div>
+    <p class="field-note" style="grid-column:1/-1">
+      One row per part. Qty on Plate and Print Time are this job's own numbers — never written
+      back to the catalog. Print Time you enter yourself, from Bambu Studio for this run's actual
+      plate; nothing here fills it in for you or overwrites what you type.
+    </p>
+    <div style="grid-column:1/-1">
+      <div class="table-wrap">
+        <table id="custom-parts">
+          <thead>
+            <tr>
+              <th style="min-width:9em">Part</th>
+              <th style="min-width:12em">Filament</th>
+              <th>Qty per Set</th>
+              <th>Qty Ordered</th>
+              <th>Qty on Plate</th>
+              <th>Runs</th>
+              <th>Filament Used (g)</th>
+              <th>Filament Cost ($)</th>
+              <th>Print Time</th>
+              <th>Active Labor (min)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="custom-body"></tbody>
+        </table>
+      </div>
+      <div class="footer-actions" style="margin-top:10px">
+        <span class="info">Qty per Set is how many of this part make one finished item — 5 Mickeys per game. Qty Ordered and Runs fill in once you Calculate.</span>
+        <button type="button" class="btn secondary small" onclick="addCustomRow()">+ Add Blank Part</button>
+      </div>
+      <div class="field compact" style="margin-top:12px">
+        <label>Assembly Labor (min per item)</label>
+        <input name="assembly_labor_min" type="number" step="0.5" min="0"
+               value="{{ form_values.assembly_labor_min }}" placeholder="0">
+      </div>
+    </div>
+
+    <div class="section-divider" style="grid-column:1/-1">Job Details</div>
+    <div class="field">
+      <label>Job Label</label>
+      <input name="job_label" value="{{ form_values.job_label }}" placeholder="e.g. 60 Cake Toppers — Smith Order" required>
+    </div>
+    <div class="field">
+      <label>Customer</label>
+      <input name="customer" value="{{ form_values.customer }}" placeholder="e.g. Anthony" list="customer-list" autocomplete="off">
+    </div>
+
+    <div class="section-divider" style="grid-column:1/-1">Order Details</div>
+    <div class="field">
+      <label>Customer Order Quantity</label>
+      <input name="order_quantity" type="number" step="1" min="1" value="{{ form_values.order_quantity }}" placeholder="e.g. 60" required>
+    </div>
+    <div class="field">
+      <label>Selling Price / Item ($)</label>
+      <input name="selling_price_per_item" type="number" step="0.01" min="0" value="{{ form_values.selling_price_per_item }}" placeholder="e.g. 1.16">
+    </div>
+    <div class="field">
+      <label>Sales Tax Rate (%)</label>
+      <input name="sales_tax_rate" type="number" step="0.01" min="0" max="20" value="{{ form_values.sales_tax_rate }}" placeholder="e.g. 6.5">
+    </div>
+    <div class="field">
+      <label>Packaging / Other Job Cost ($)</label>
+      <input name="other_job_cost" type="number" step="0.01" min="0" value="{{ form_values.other_job_cost }}" placeholder="0">
+    </div>
+
+    <div class="section-divider" style="grid-column:1/-1">Custom Design Work</div>
+    <p class="field-note" style="grid-column:1/-1">
+      Leave this alone for a normal product sale. A personalized catalog item — the same
+      cake topper with different text — is a <strong>product</strong>: no design fee, no
+      minimum. The first one of a new personalized product is the design job, because that
+      is where you build the template. Every one after it is a sale.
+    </p>
+    <div style="grid-column:1/-1">
+      <label class="check" style="margin-bottom:8px">
+        <input type="checkbox" name="is_custom_job" value="1" id="custom-job-toggle"
+               {{ 'checked' if form_values.is_custom_job == '1' else '' }}>
+        <span><strong>This is a custom design job</strong> — modeled from scratch for this customer</span>
+      </label>
+      <p class="field-note" style="margin:0 0 10px">
+        Ticking this applies the ${{ '%.2f'|format(min_job_charge) }} minimum job charge if the
+        quote comes in under it. Design time below is charged either way; the minimum is not.
+      </p>
+    </div>
+    <div class="field">
+      <label>Design Time (minutes)</label>
+      <input name="design_minutes" type="number" step="1" min="0"
+             id="design-minutes-input"
+             value="{{ form_values.design_minutes }}" placeholder="0">
+      <span class="field-note">
+        Billed once at ${{ '%.2f'|format(design_rate) }}/hr, on top of the parts. Deliberately
+        kept out of per-item cost, break-even and the margin ladder — so a reorder of this same
+        design quotes clean without you stripping anything back out.
+      </span>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      {% if design_available_minutes > 0 %}
+        <button type="button" class="btn secondary"
+                onclick="document.getElementById('design-minutes-input').value='{{ '%.0f'|format(design_available_minutes) }}';">
+          Use {{ '%.0f'|format(design_available_minutes) }} min logged
+          (${{ '%.2f'|format(design_available_fee) }})
+        </button>
+        <span class="field-note">
+          {{ design_available_sessions }} unbilled session{{ 's' if design_available_sessions != 1 else '' }}
+          on the clock for this {{ 'SKU' if form_values.sku else 'customer' }}. Saving this quote
+          marks them billed so the same hours can never be charged twice.
+        </span>
+      {% else %}
+        <span class="field-note" style="margin-top:10px;display:block">
+          No unbilled design time logged for this
+          {{ 'SKU' if form_values.sku else 'customer' }}.
+          Track it on the <a href="{{ url_for('design_log') }}">Design Time</a> page and it will
+          be offered here automatically.
+        </span>
+      {% endif %}
+    </div>
+
+    <div class="edit-actions" style="grid-column:1/-1">
+      <button type="submit" name="action" value="calculate" class="btn secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 10h.01"/><path d="M12 10h.01"/></svg>
+        Calculate
+      </button>
+      <button type="submit" name="action" value="save" class="btn primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+        {{ 'Calculate & Update This Job' if edit_job_id else 'Calculate & Save to History' }}
+      </button>
+    </div>
+  </form>
+
+  {% if result %}
+    {% if result.error %}
+      <div class="pricing-error" style="margin-top:16px">{{ result.error }}</div>
+    {% else %}
+      <div class="pricing-results" style="margin-top:16px">
+        {% if result.parts_plan %}
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table>
+            <thead><tr><th>Part</th><th>Filament</th><th>Units Needed</th><th>Print Runs</th><th>Units Made</th><th>Spare</th><th>Filament Drawn</th><th>Cost / Plate</th><th>Batch Cost</th><th>Cost / Unit Needed</th></tr></thead>
+            <tbody>
+            {% for p in result.parts_plan %}
+              <tr>
+                <td><strong>{{ p.part_name }}</strong></td>
+                <td>{% if p.filament_label %}{{ p.filament_label }}{% else %}<span class="info">— none picked —</span>{% endif %}</td>
+                <td>{{ "%g"|format(p.units_needed) }}</td>
+                <td>{{ p.print_runs_required }}</td>
+                <td>{{ "%g"|format(p.units_produced) }}</td>
+                <td>{{ "%g"|format(p.extra_units) }}</td>
+                <td>{% if p.filament_type_id %}{{ '{:,.0f}'.format(p.filament_total_g) }} g{% else %}<span class="info">—</span>{% endif %}</td>
+                <td>${{ "%.2f"|format(p.cost_per_batch) }}</td>
+                <td>{{ "%g"|format(p.units_produced) }} @ ${{ "%.3f"|format(p.cost_per_unit) }} = ${{ "%.2f"|format(p.part_total_cost) }}</td>
+                <td>${{ "%.3f"|format(p.cost_per_unit_needed) }}
+                  <span class="info">({{ "%g"|format(p.units_needed) }} needed, {{ "%g"|format(p.extra_units) }} spare)</span>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+        <div class="pricing-grid">
+          {% if result.parts_plan %}
+            <div class="pricing-stat"><span>Total Print Time</span><strong>{{ "%.1f"|format(result.total_print_hours) }} h</strong></div>
+            <div class="pricing-stat"><span>True Cost / Item</span><strong>${{ "%.3f"|format(result.true_cost_per_item) }}</strong></div>
+            {% if result.assembly_total %}
+            <div class="pricing-stat"><span>Assembly Labor Total</span><strong>${{ "%.2f"|format(result.assembly_total) }}</strong></div>
+            {% endif %}
+          {% else %}
+            <div class="pricing-stat"><span>Print Runs Required</span><strong>{{ result.print_runs_required }}</strong></div>
+            <div class="pricing-stat"><span>Total Items Produced</span><strong>{{ result.total_items_produced }}</strong></div>
+            <div class="pricing-stat"><span>Extra Items</span><strong>{{ result.extra_items_produced }}</strong></div>
+          {% endif %}
+          <div class="pricing-stat"><span>Total Production Cost</span><strong>${{ "%.2f"|format(result.total_production_cost) }}</strong></div>
+          <div class="pricing-stat highlight"><span>Total True Job Cost</span><strong>${{ "%.2f"|format(result.total_true_job_cost) }}</strong></div>
+          <div class="pricing-stat"><span>Sales Subtotal</span><strong>${{ "%.2f"|format(result.sales_subtotal) }}</strong></div>
+          {% if result.design_fee %}
+          <div class="pricing-stat highlight">
+            <span>Design &amp; Setup (one-time)</span>
+            <strong>${{ "%.2f"|format(result.design_fee) }}</strong>
+          </div>
+          {% endif %}
+          <div class="pricing-stat"><span>Sales Tax</span><strong>${{ "%.2f"|format(result.sales_tax) }}</strong></div>
+          <div class="pricing-stat highlight"><span>Invoice Total</span><strong>${{ "%.2f"|format(result.invoice_total) }}</strong></div>
+          <div class="pricing-stat highlight"><span>Gross Profit</span><strong>${{ "%.2f"|format(result.gross_profit) }}</strong></div>
+          <div class="pricing-stat"><span>Profit / Item</span><strong>${{ "%.2f"|format(result.profit_per_item) }}</strong></div>
+          <div class="pricing-stat"><span>Actual Margin</span><strong>{{ "%.1f"|format(result.actual_margin * 100) if result.actual_margin is not none else "—" }}%</strong></div>
+          <div class="pricing-stat"><span>Break-Even Price / Item</span><strong>${{ "%.2f"|format(result.break_even_price) }}</strong></div>
+        </div>
+        {% if result.design_fee %}
+        <p class="field-note" style="margin:0 0 6px">
+          Design &amp; setup is <strong>{{ "%.0f"|format(result.design_minutes) }} min at
+          ${{ "%.2f"|format(result.design_rate) }}/hr</strong>, charged once for the whole job
+          regardless of quantity. It is not in True Cost / Item or Break-Even — quote a reorder
+          of this design straight off those numbers with no design fee at all.
+        </p>
+        {% endif %}
+        {% if result.min_job_charge_applied %}
+        <div class="flash error" style="margin:0 0 10px">
+          <strong>Minimum job charge applied.</strong>
+          This quote came to ${{ "%.2f"|format(result.charge_before_min) }} — below your
+          ${{ "%.2f"|format(result.min_job_charge) }} floor — so it has been raised to
+          ${{ "%.2f"|format(result.job_charge) }}. If this is really a product sale rather
+          than a design job, untick the custom design box above.
+        </div>
+        {% endif %}
+        {% if result.scrap_rate and result.parts_plan %}
+          {% set uplifted = result.parts_plan|selectattr('scrap_uplift','greaterthan',1.0)|list %}
+          {% if uplifted %}
+          <p class="field-note" style="margin:0 0 6px">
+            The whole order fits on one plate for
+            {{ uplifted|map(attribute='part_name')|join(', ') }}, so the
+            {{ "%.0f"|format(result.scrap_rate * 100) }}% failure allowance is added as a cost
+            uplift rather than a second print run. Rounding up to another full plate would
+            charge 100% for a {{ "%.0f"|format(result.scrap_rate * 100) }}% allowance.
+          </p>
+          {% endif %}
+        {% endif %}
+        {% if result.margins %}
+        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+          <div class="section-head" style="margin-bottom:10px">
+            <h2 style="font-size:16px">What to Charge</h2>
+            <span class="info">
+              Costs <strong>${{ "%.2f"|format(result.break_even_price) }}</strong> an item to make.
+              {% if result.actual_margin is not none %}
+                You are quoting {{ "%.1f"|format(result.actual_margin * 100) }}%.
+              {% else %}
+                Pick a target and put that figure in Selling Price / Item above.
+              {% endif %}
+            </span>
+          </div>
+          <div class="pricing-grid">
+            <div class="pricing-stat"><span>40% Margin</span><strong>${{ "%.2f"|format(result.margins.margin_40) }}</strong></div>
+            <div class="pricing-stat"><span>50% Margin</span><strong>${{ "%.2f"|format(result.margins.margin_50) }}</strong></div>
+            <div class="pricing-stat highlight"><span>60% Margin</span><strong>${{ "%.2f"|format(result.margins.margin_60) }}</strong></div>
+            <div class="pricing-stat"><span>70% Margin</span><strong>${{ "%.2f"|format(result.margins.margin_70) }}</strong></div>
+            <div class="pricing-stat"><span>80% Margin</span><strong>${{ "%.2f"|format(result.margins.margin_80) }}</strong></div>
+          </div>
+          <div class="pricing-margins">
+            <span>Job total at 40%: ${{ "%.2f"|format(result.margins.margin_40 * result.order_quantity + result.design_fee) }}</span>
+            <span>at 50%: ${{ "%.2f"|format(result.margins.margin_50 * result.order_quantity + result.design_fee) }}</span>
+            <span>at 60%: ${{ "%.2f"|format(result.margins.margin_60 * result.order_quantity + result.design_fee) }}</span>
+            <span>at 70%: ${{ "%.2f"|format(result.margins.margin_70 * result.order_quantity + result.design_fee) }}</span>
+            <span>at 80%: ${{ "%.2f"|format(result.margins.margin_80 * result.order_quantity + result.design_fee) }}</span>
+            {% if result.design_fee %}<span>(each includes the ${{ "%.2f"|format(result.design_fee) }} design fee)</span>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+
+<script nonce="{{ csp_nonce }}">
+// Same idea for each catalog part row.
+const FIL_RATES = {
+{%- for f in filaments %}{% if f.cost_per_gram is not none %}
+  "{{ f.id }}": {{ '%.6f'|format(f.cost_per_gram) }}{{ "," if not loop.last }}
+{%- endif %}{% endfor %}
+};
+
+// ── Colour stack ───────────────────────────────────────────────────────────
+// One printed part can lay more than one filament — an AMS print with a blue
+// face and red lettering is ONE part and TWO colours. With a single colour the
+// grams box stays hidden and the part's plate figure is used, so nothing about
+// the common case changes. Add a second colour and each one gets its own grams
+// box, and their sum becomes the plate total.
+function colourOptions(selected) {
+  return ['<option value="">— pick a colour —</option>'].concat(
+    FIL_OPTIONS.map(function (f) {
+      return '<option value="' + f.id + '"' +
+             (String(selected || "") === f.id ? " selected" : "") + '>' +
+             escapeHtml(f.label) + '</option>';
+    })).join("");
+}
+
+function addColour(prefix, pid, preset) {
+  const stack = document.getElementById("cs-" + prefix + pid);
+  if (!stack) return;
+  const n = stack.querySelectorAll(".colour-row").length;
+  preset = preset || {};
+  // Going from one colour to two: with a single colour, the shared FILAMENT (G)
+  // box is the only place grams get typed, and this row's own .cgrams input is
+  // hidden and left empty on purpose. The instant a second colour exists,
+  // syncColours() below only trusts the per-colour inputs, so without this
+  // migration the first colour's real grams are silently dropped from the
+  // total the moment "+ colour" is clicked. Runs once, only when the row count
+  // is about to go from 1 to 2, and only if that first row hasn't already been
+  // seeded with its own value (e.g. loading a saved multi-colour job).
+  if (n === 1) {
+    const key0 = (prefix === "cp_") ? ("c" + pid) : pid;
+    const sharedBox = document.getElementById("g-" + key0);
+    const firstRow = stack.querySelector(".colour-row");
+    const firstGrams = firstRow ? firstRow.querySelector(".cgrams") : null;
+    if (sharedBox && firstGrams && !firstGrams.value) {
+      const existing = parseFloat(sharedBox.value);
+      if (!isNaN(existing) && existing > 0) firstGrams.value = existing;
+    }
+  }
+  const row = document.createElement("div");
+  row.className = "colour-row";
+  row.style.cssText = "display:flex;gap:5px;align-items:center;margin-bottom:4px";
+  row.innerHTML =
+    '<select name="' + prefix + 'filp_' + pid + '_' + n + '" style="min-width:0;flex:1" ' +
+      'onchange="syncColours(\'' + prefix + '\',\'' + pid + '\')">' +
+      colourOptions(preset.filament_type_id) + '</select>' +
+    '<input name="' + prefix + 'filg_' + pid + '_' + n + '" type="number" step="0.01" min="0" ' +
+      'class="cgrams" placeholder="g" style="width:5.5em;display:none" ' +
+      'value="' + escapeHtml((preset.grams != null ? preset.grams : "")) + '" ' +
+      'oninput="syncColours(\'' + prefix + '\',\'' + pid + '\')">' +
+    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this colour" ' +
+             'onclick="this.parentNode.remove();syncColours(\'' + prefix + '\',\'' + pid + '\')">&times;</button>' : '');
+  stack.appendChild(row);
+  syncColours(prefix, pid);
+}
+
+function syncColours(prefix, pid) {
+  const stack = document.getElementById("cs-" + prefix + pid);
+  if (!stack) return;
+  const rows = stack.querySelectorAll(".colour-row");
+  const multi = rows.length > 1;
+  const key = (prefix === "cp_") ? ("c" + pid) : pid;
+  const gramsBox = document.getElementById("g-" + key);
+  const costBox = document.getElementById("c-" + key);
+  let total = 0, cost = 0, priced = false, anyPool = false;
+  rows.forEach(function (r) {
+    const sel = r.querySelector("select");
+    const gi = r.querySelector(".cgrams");
+    gi.style.display = multi ? "" : "none";
+    if (sel.value) anyPool = true;
+    let g = parseFloat(gi.value);
+    if (!multi && (isNaN(g) || g <= 0) && gramsBox) g = parseFloat(gramsBox.value);
+    if (sel.value && g > 0) {
+      total += g;
+      const rate = FIL_RATES[sel.value];
+      if (rate !== undefined) { cost += g * rate; priced = true; }
+    }
+  });
+  // With two or more colours the per-colour figures ARE the plate total, so the
+  // grams column becomes a read-only sum rather than a second place to type it.
+  if (gramsBox) {
+    if (multi) {
+      gramsBox.readOnly = true;
+      gramsBox.style.opacity = "0.65";
+      gramsBox.title = "Sum of the colours on this part";
+      // Once there are two or more colours, the summed total is authoritative
+      // even when it's zero — a stale nonzero value sitting in a read-only box
+      // that no longer feeds the math is worse than an honest, visible zero.
+      gramsBox.value = total.toFixed(2).replace(/\.00$/, "");
+    } else {
+      gramsBox.readOnly = false;
+      gramsBox.style.opacity = "1";
+      gramsBox.title = "";
+    }
+  }
+  if (costBox) {
+    if (anyPool && priced) {
+      costBox.readOnly = true;
+      costBox.style.opacity = "0.65";
+      costBox.title = "Calculated from this job's filament";
+      if (cost > 0) costBox.value = cost.toFixed(3);
+    } else {
+      costBox.readOnly = false;
+      costBox.style.opacity = "1";
+      costBox.title = "";
+    }
+  }
+}
+
+// prefix defaults to "" so the catalog call site above (one arg, always
+// prefix "") keeps working unchanged. The freehand call site below passes
+// its real prefix explicitly instead of a synthetic "c"-prefixed id that
+// never matched any element.
+function partCost(pid, prefix) { syncColours(prefix || "", pid); }
+
+// ── Custom job rows ────────────────────────────────────────────────────────
+// Indices only ever increase; removing a row leaves a gap, which the server
+// tolerates because it discovers indices from the submitted keys.
+const FIL_OPTIONS = [
+{%- for f in filaments %}
+  {id: "{{ f.id }}", label: {{ (f.label ~ (' · $' ~ '%.4f'|format(f.cost_per_gram) ~ '/g' if f.cost_per_gram is not none else ''))|tojson }}}{{ "," if not loop.last }}
+{%- endfor %}
+];
+let customIdx = 0;
+
+function addCustomRow(v) {
+  v = v || {};
+  const i = customIdx++;
+  const tr = document.createElement("tr");
+  // Qty Ordered / Runs are pure display of calculate_job_cost_from_parts()'s
+  // own already-computed output (see job_calculator() in app.py, where they
+  // get zipped onto these same rows from result.parts_plan) — never
+  // recomputed here. Blank until the next Calculate.
+  const qtyOrdered = (v.qty_ordered != null) ? String(v.qty_ordered) : "";
+  const runs = (v.runs != null) ? String(v.runs) : "";
+  tr.innerHTML =
+    '<td><select name="cp_sku_' + i + '" class="row-sku" style="width:11em" title="The catalog SKU this row came from, if any — grouped the same way as the Parts picker above">' +
+        groupedPartOptionsHtml(null, null, v.source_sku) +
+      '</select><br>' +
+      '<input name="cp_name_' + i + '" value="' + escapeHtml((v.part_name || "")) + '" placeholder="e.g. Board" style="width:11em;margin-top:3px"><br>' +
+      '<button type="button" class="btn ghost small" style="margin-top:3px" ' +
+        'onclick="loadRowSku(' + i + ')" title="(Re)load this row\'s fields from the picked SKU">Load SKU</button></td>' +
+    '<td><div class="colour-stack" id="cs-cp_' + i + '" data-pid="' + i + '" data-prefix="cp_"></div>' +
+      '<button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColour(\'cp_\', ' + i + ')">+ colour</button></td>' +
+    '<td><input name="cp_qty_per_' + i + '" type="number" step="0.5" min="0.5" value="' + escapeHtml((v.qty_per_product || 1)) + '" style="width:5.5em"></td>' +
+    '<td class="info" style="text-align:center">' + (qtyOrdered !== "" ? qtyOrdered : '<span class="info">—</span>') + '</td>' +
+    '<td><input name="cp_plate_' + i + '" type="number" step="1" min="1" value="' + escapeHtml((v.qty_on_plate || "")) + '" placeholder="e.g. 4" style="width:6em"></td>' +
+    '<td class="info" style="text-align:center">' + (runs !== "" ? runs : '<span class="info">—</span>') + '</td>' +
+    '<td><input id="g-c' + i + '" name="cp_grams_' + i + '" type="number" step="0.01" min="0" value="' + escapeHtml((v.filament_used_g || "")) + '" style="width:7em" oninput="partCost(' + i + ', \'cp_\')"></td>' +
+    '<td><input id="c-c' + i + '" name="cp_cost_' + i + '" type="number" step="0.01" min="0" value="' + (v.filament_cost != null ? Number(v.filament_cost).toFixed(3) : "") + '" style="width:7em"></td>' +
+    '<td><input name="cp_time_' + i + '" value="' + escapeHtml((v.print_time_text || "")) + '" placeholder="1h 50m (from Bambu Studio)" style="width:9em"></td>' +
+    '<td><input name="cp_labor_' + i + '" type="number" step="0.5" min="0" value="' + escapeHtml((v.active_labor_min != null ? v.active_labor_min : "")) + '" placeholder="Default {{ settings.default_active_labor_min }}" style="width:7em"></td>' +
+    '<td><button type="button" class="icon-btn" title="Remove this part" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+  document.getElementById("custom-body").appendChild(tr);
+  const seed = (v.filament_draws && v.filament_draws.length) ? v.filament_draws : [{}];
+  seed.forEach(function (d) { addColour("cp_", i, d); });
+  return i;
+}
+
+// ── Catalog-driven rows: Parts picker + per-row SKU loader ──────────────────
+// Both fetch the same read-only endpoint and both just append/overwrite
+// normal cp_* rows — nothing here is a different kind of row from a
+// hand-typed one by the time it reaches the server.
+function setPrimarySkuIfBlank(sku) {
+  const el = document.getElementById("primary-sku");
+  if (el && !el.value) el.value = sku;
+}
+
+// CATALOG already carries `group` — the SKU's own TYPE-NNN type segment,
+// computed once server-side (sku_type_segment() in app.py) from the SKU
+// string SKU_RE already requires, not a new field. Grouping here is display
+// only: it decides how the two pickers below are organised, nothing about
+// what gets costed or stored.
+const CATALOG = {{ catalog|tojson }};
+const pickedSkus = new Set();
+
+// Shared by the Section 1 picker AND every row's own SKU select, so "same
+// grouping in both places" is literally the same function, not two
+// implementations that could drift. filterText narrows by SKU, part name or
+// department (Section 1's search box); disabledSet greys out SKUs already
+// picked at the top level (Section 1 only — a row's own picker is never
+// restricted, since two rows legitimately picking the same SKU is normal);
+// selectedSku pre-selects a row's current pick when rebuilding it.
+function groupedPartOptionsHtml(filterText, disabledSet, selectedSku) {
+  const q = (filterText || "").trim().toLowerCase();
+  const filtered = q ? CATALOG.filter(function (c) {
+    return c.sku.toLowerCase().includes(q) ||
+           (c.product_name || "").toLowerCase().includes(q) ||
+           (c.department || "").toLowerCase().includes(q) ||
+           (c.category || "").toLowerCase().includes(q);
+  }) : CATALOG;
+  const groups = {}, order = [];
+  filtered.forEach(function (c) {
+    if (!groups[c.group]) { groups[c.group] = []; order.push(c.group); }
+    groups[c.group].push(c);
+  });
+  // CATALOG already arrives sorted (group alphabetically / "Other" last,
+  // numeric within group) from app.py — bucketing above preserves that
+  // order inside each group. Group ORDER itself still needs re-establishing
+  // here since object key order isn't guaranteed to match insertion for
+  // non-integer-like keys in every engine.
+  order.sort(function (a, b) {
+    if (a === "Other") return 1;
+    if (b === "Other") return -1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+  });
+  let html = '<option value="">— pick a part —</option>';
+  order.forEach(function (g) {
+    html += '<optgroup label="' + escapeHtml(g) + '">';
+    groups[g].forEach(function (c) {
+      const dis = (disabledSet && disabledSet.has(c.sku)) ? " disabled" : "";
+      const sel = (selectedSku && selectedSku === c.sku) ? " selected" : "";
+      html += '<option value="' + escapeHtml(c.sku) + '"' + dis + sel + '>' +
+        (c.department ? escapeHtml(c.department) + " · " : "") + escapeHtml(c.sku) + " — " + escapeHtml(c.product_name) +
+        (c.category ? " · " + escapeHtml(c.category) : "") +
+        (c.is_assembly ? " (assembly)" : "") + "</option>";
+    });
+    html += "</optgroup>";
+  });
+  return html;
+}
+
+// ── SECTION 1 picker: pick one, Add, resets; shows as a removable chip;
+// that SKU is disabled in the dropdown until its chip is removed. ─────────
+function addPickedPart() {
+  const sel = document.getElementById("parts-picker");
+  const sku = sel.value;
+  if (!sku) return;
+  const label = sel.options[sel.selectedIndex].text;
+  fetch("/api/job-parts/" + encodeURIComponent(sku))
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error || !data.parts || !data.parts.length) return;
+      const sourceSkus = data.parts.map(function (p) { return p.source_sku; });
+      data.parts.forEach(addCustomRow);
+      addPickedChip(sku, label, sourceSkus);
+      pickedSkus.add(sku);
+      const filterEl = document.getElementById("parts-filter");
+      sel.innerHTML = groupedPartOptionsHtml(filterEl ? filterEl.value : "", pickedSkus, "");
+      setPrimarySkuIfBlank(data.sku);
+    });
+}
+
+function addPickedChip(sku, label, sourceSkus) {
+  const list = document.getElementById("picked-parts-list");
+  const chip = document.createElement("span");
+  chip.className = "badge gray";
+  chip.dataset.sku = sku;
+  chip.dataset.sourceSkus = sourceSkus.join(",");
+  chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:4px 10px";
+  const text = document.createElement("span");
+  text.textContent = label;
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "icon-btn"; btn.title = "Remove";
+  btn.innerHTML = "&times;";
+  btn.onclick = function () { removePickedPart(chip); };
+  chip.appendChild(text);
+  chip.appendChild(btn);
+  list.appendChild(chip);
+}
+
+function removePickedPart(chip) {
+  const sourceSkus = (chip.dataset.sourceSkus || "").split(",").filter(Boolean);
+  // Remove every row this pick added — matched by source SKU, since an
+  // assembly pick adds rows tagged with its COMPONENTS' skus, not its own.
+  sourceSkus.forEach(function (ssku) {
+    document.querySelectorAll(".row-sku").forEach(function (sel) {
+      if (sel.value.trim().toUpperCase() === ssku) {
+        sel.closest("tr").remove();
+      }
+    });
+  });
+  pickedSkus.delete(chip.dataset.sku);
+  const sel = document.getElementById("parts-picker");
+  const filterEl = document.getElementById("parts-filter");
+  sel.innerHTML = groupedPartOptionsHtml(filterEl ? filterEl.value : "", pickedSkus, "");
+  chip.remove();
+}
+
+function loadRowSku(i) {
+  const select = document.querySelector('[name="cp_sku_' + i + '"]');
+  const sku = (select && select.value || "").trim().toUpperCase();
+  if (!sku) return;
+  fetch("/api/job-parts/" + encodeURIComponent(sku))
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error || !data.parts || !data.parts.length) {
+        if (select) select.title = data.error || "No parts found for that SKU";
+        return;
+      }
+      // First returned part fills THIS row in place (a swap); any further
+      // parts (a multi-part product, or an assembly) are new rows appended
+      // after it — one row can't hold more than one part. Print Time is
+      // never touched here — the user's own typed value, if any, survives a swap.
+      const tr = select.closest("tr");
+      const first = data.parts[0];
+      tr.querySelector('input[name="cp_name_' + i + '"]').value = first.part_name || "";
+      tr.querySelector('input[name="cp_qty_per_' + i + '"]').value = first.qty_per_product || 1;
+      tr.querySelector('input[name="cp_plate_' + i + '"]').value = first.qty_on_plate || "";
+      tr.querySelector('#g-c' + i).value = first.filament_used_g || "";
+      tr.querySelector('#c-c' + i).value = first.filament_cost != null ? Number(first.filament_cost).toFixed(3) : "";
+      tr.querySelector('input[name="cp_labor_' + i + '"]').value = first.active_labor_min != null ? first.active_labor_min : "";
+      select.value = first.source_sku || sku;
+      document.getElementById("cs-cp_" + i).innerHTML = "";
+      const seed = (first.filament_draws && first.filament_draws.length) ? first.filament_draws : [{}];
+      seed.forEach(function (d) { addColour("cp_", i, d); });
+      data.parts.slice(1).forEach(addCustomRow);
+      setPrimarySkuIfBlank(data.sku);
+    });
+}
+
+function toggleSaveAssembly() {
+  const el = document.getElementById("save-assembly-panel");
+  el.style.display = (el.style.display === "none") ? "block" : "none";
+}
+
+document.addEventListener("submit", function (e) {
+  if (e.target && e.target.id === "save-assembly-form") {
+    // Every SKU currently loaded into a row, not what's (or isn't) selected
+    // in the top multi-select right now — the table is the source of truth
+    // for "what's actually in this job," since rows can be removed, added
+    // one at a time via loadRowSku(), or left over from an edit reload.
+    const skus = Array.from(document.querySelectorAll(".row-sku"))
+      .map(function (i) { return i.value.trim().toUpperCase(); })
+      .filter(function (v, idx, arr) { return v && arr.indexOf(v) === idx; });
+    skus.forEach(function (sku) {
+      const h = document.createElement("input");
+      h.type = "hidden"; h.name = "component_sku"; h.value = sku;
+      e.target.appendChild(h);
+    });
+  }
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+  const body = document.getElementById("custom-body");
+  if (body) {
+    const rows = {{ custom_rows|tojson }};
+    if (rows && rows.length) { rows.forEach(addCustomRow); }
+    else { addCustomRow(); }
+  }
+  // Reflect rows that already carry a source SKU (a saved job reloaded for
+  // editing, or a POST reload) back into Section 1's chip list — one chip
+  // per distinct row SKU. An assembly's original single-pick grouping isn't
+  // recoverable at this point (its rows are already just plain rows tagged
+  // with their own component SKUs), so a reload shows one chip per part
+  // rather than one per original assembly pick; removing any of them still
+  // removes exactly the row it names.
+  const seen = {};
+  let firstLabel = {};
+  CATALOG.forEach(function (c) { firstLabel[c.sku] = c.department ? (c.department + " · " + c.sku + " — " + c.product_name) : (c.sku + " — " + c.product_name); });
+  document.querySelectorAll(".row-sku").forEach(function (sel) {
+    const sku = sel.value.trim().toUpperCase();
+    if (!sku || seen[sku]) return;
+    seen[sku] = true;
+    pickedSkus.add(sku);
+    addPickedChip(sku, firstLabel[sku] || sku, [sku]);
+  });
+  // Populate both pickers only after pickedSkus is fully known, so anything
+  // already loaded shows disabled in Section 1 from the very first render.
+  document.getElementById("parts-picker").innerHTML =
+    groupedPartOptionsHtml("", pickedSkus, "");
+  const filterEl = document.getElementById("parts-filter");
+  if (filterEl) {
+    filterEl.addEventListener("input", function () {
+      document.getElementById("parts-picker").innerHTML =
+        groupedPartOptionsHtml(filterEl.value, pickedSkus, "");
+    });
+  }
+});
+</script>
+<datalist id="dept-list">
+  <option value="Meat"><option value="Bakery"><option value="Deli"><option value="Produce">
+</datalist>
+
+<datalist id="customer-list">
+  {% for c in customers %}<option value="{{ c }}">{% endfor %}
+</datalist>
+{% endblock %}

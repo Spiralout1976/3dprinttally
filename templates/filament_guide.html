@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Filament Guide · 3DPrintTally{% endblock %}
+{% block page_title %}Filament Guide{% endblock %}
+{% block page_subtitle %}What this page is, and how to actually use it.{% endblock %}
+{% block content %}
+
+<style>
+  .guide { max-width: 60rem; }
+  .guide h3 { margin: 0 0 6px; }
+  .guide ol, .guide ul { margin: 8px 0 0; padding-left: 1.25rem; }
+  .guide li { margin-bottom: 7px; line-height: 1.5; }
+  .guide p { line-height: 1.55; }
+  .guide code { padding: 1px 5px; border-radius: 4px; background: rgba(127,127,127,0.14); font-size: 0.92em; }
+  .guide .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%; margin-right: 8px;
+    background: var(--primary); color: #fff; font-size: 0.85rem; font-weight: 700;
+  }
+  .guide .callout {
+    border-left: 3px solid var(--primary);
+    padding: 10px 14px; margin: 12px 0 0;
+    background: rgba(127,127,127,0.07); border-radius: 0 6px 6px 0;
+  }
+  .guide .callout strong { display: block; margin-bottom: 3px; }
+  .guide dl { margin: 8px 0 0; }
+  .guide dt { font-weight: 700; margin-top: 9px; }
+  .guide dd { margin: 2px 0 0 1.1rem; }
+  .guide table { margin-top: 10px; }
+</style>
+
+<div class="guide">
+
+<section class="card">
+  <div class="card-head"><h2>The whole system in four sentences</h2></div>
+  <ol>
+    <li>A <strong>filament</strong> is a pool. "White PLA" is one entry no matter how many spools you own.</li>
+    <li>You <strong>buy spools into it</strong> — how many, and what you paid for one.</li>
+    <li>You <strong>pick the colour on the Job Calculator</strong>, per job, because the customer decides the colour — not the product.</li>
+    <li>Once a month you <strong>weigh what is really there</strong> and hit Reconcile, because the numbers drift.</li>
+  </ol>
+  <div class="callout">
+    <strong>One SKU, any colour</strong>
+    SGN-001 is the Sign Holder whether it prints white for one customer or blue for the
+    next, regardless of which department sells it. The product page holds the recipe — grams,
+    plate quantity, print time — and never a colour. That is why you never end up with
+    SGN-001-WHITE and SGN-001-BLUE.
+  </div>
+  <div class="callout">
+    <strong>Why grams and not spools</strong>
+    A print does not use "half a spool," it uses 240 g. If the system counted spools it could never
+    subtract a print. Grams are the unit that works; spools are shown alongside so the number still
+    means something when you look at the shelf.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2><span class="step-num">1</span>Add a filament</h2></div>
+  <p>Top of the Filament page. You need two things: <strong>Material</strong> and <strong>Color</strong>.</p>
+  <dl>
+    <dt>Material</dt>
+    <dd>PLA, PLA+, PETG, TPU, PLA Silk. Pick from the list or type your own — the list is there to stop typos, not to limit you.</dd>
+    <dt>Color</dt>
+    <dd>What you call it. "White." "Matte Charcoal." Whatever you will recognise in a dropdown.</dd>
+    <dt>Brand</dt>
+    <dd>Optional, but it matters if Bambu white and Sunlu white behave differently or cost differently. Leave it blank and they share one pool.</dd>
+    <dt>Swatch</dt>
+    <dd>Purely visual. Makes the list scannable at a glance.</dd>
+    <dt>Spool Size (g)</dt>
+    <dd>Defaults to 1000 because that is what you buy. Change it for refills, 750 g spools, or a 5 kg roll.</dd>
+    <dt>Reorder At (g)</dt>
+    <dd>When stock drops to this, the row flags. 500 g is half a spool — enough warning to order before you are stuck mid-job.</dd>
+    <dt>Spools You Have / Price per Spool</dt>
+    <dd>Optional, and the shortcut worth using. Fill these in and your opening stock is logged in the same click — no second step.</dd>
+  </dl>
+  <div class="callout">
+    <strong>One entry per material + color + brand</strong>
+    The system refuses a duplicate on purpose. Three "white PLA" pools would make every stock number
+    and every reorder alert meaningless.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2><span class="step-num">2</span>Buy spools into it</h2></div>
+  <p>Hit <strong>+ Spools</strong> on any row.</p>
+  <ul>
+    <li><strong>Spools</strong> — how many you bought. Usually 1.</li>
+    <li><strong>Grams per Spool</strong> — pre-filled from the filament's spool size. Only change it if this particular purchase is different.</li>
+    <li><strong>Price per Spool</strong> — what <em>one</em> spool cost. Bought 2 at $21.99 each? Spools <code>2</code>, price <code>21.99</code>. Not $43.98.</li>
+    <li><strong>Note</strong> — where you bought it, or anything you want to remember.</li>
+  </ul>
+  <div class="callout">
+    <strong>This is where your cost number comes from</strong>
+    The <strong>$ / Spool</strong> and <strong>$ / g</strong> columns are a weighted average of everything
+    you have actually paid. Buy cheap once and expensive once, and the average sits between them —
+    weighted by grams, not by number of purchases. Skip the price and stock still tracks fine, you
+    just get a dash instead of a cost.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2><span class="step-num">3</span>Keep it honest</h2></div>
+  <p>The <strong>Adjust</strong> button holds two different corrections. They are not the same thing.</p>
+  <h3 style="margin-top:14px">Log Waste</h3>
+  <p>Filament you burned with nothing sellable to show for it. A print that failed at 60%. A nozzle
+     clog you cleared. Purge you did not account for. Comes straight off stock.</p>
+  <h3 style="margin-top:14px">Log Personal Print</h3>
+  <p>Something you printed for yourself. Enter the grams and what it was. Stock comes down exactly
+     like a customer job, but nothing is costed and no job is created — there is no customer and no
+     price. Printed it in two colours? Log each one on its own filament.</p>
+  <h3 style="margin-top:14px">Reconcile</h3>
+  <p>Put the spools on a kitchen scale, subtract the empty spool weight, and enter what it actually
+     reads. The system logs the difference and moves on. No blame, no unpicking where it went.</p>
+  <div class="callout">
+    <strong>Do this monthly. It is not optional.</strong>
+    Bambu Studio tells you the filament used <em>for the model</em>. It does not count the purge tower,
+    AMS filament changes, skirt, brim, or the last few metres you cannot print with. On multi-colour
+    work purge alone can be a quarter of the job. Deduct only the sliced estimate and after fifteen
+    spools the system says 3,400 g and your shelf says 2,600 g. Reconcile is what stops that.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Reading the table</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Column</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td><strong>On Hand</strong></td><td>Grams left. The bar is a rough fill gauge against three spools' worth.</td></tr>
+        <tr><td><strong>Spools</strong></td><td>The same number divided by spool size. <code>1.73</code> means about one and three-quarter spools.</td></tr>
+        <tr><td><strong>$ / Spool</strong></td><td>Weighted average of what you have paid per spool.</td></tr>
+        <tr><td><strong>$ / g</strong></td><td>The same figure per gram. This is the number job costing will use.</td></tr>
+        <tr><td><strong>Value</strong></td><td>Grams on hand × cost per gram. What is sitting on your shelf in dollars.</td></tr>
+        <tr><td><strong>Status</strong></td><td><span class="badge green">In stock</span> above threshold, <span class="badge red">Reorder</span> at or below it, <span class="badge red">Out</span> at zero or less.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:14px"><strong>Ledger</strong> on any row shows every gram in and out, newest
+     first, with a running balance. That is the audit trail — if a number ever looks wrong, the answer
+     is in there.</p>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2><span class="step-num">4</span>Cost a job</h2></div>
+  <p>Job Calculator → pick the SKU → a <strong>Filament for This Job</strong> dropdown appears for
+     every printed part. Choose the colour the customer wants. Two-part product in two colours? Pick
+     each one separately.</p>
+  <ul>
+    <li>Cost is calculated from what those exact spools cost you — blue at $27.99 prices differently from white at $21.99.</li>
+    <li>Saving the job draws those grams out of stock, including the spare units on a partly-filled plate. A 40-unit order of a 12-up part is 4 runs, so 4 plates of filament come off.</li>
+    <li>Deleting a job from Job Cost History puts the filament back.</li>
+    <li>Leave a part unpicked and it falls back to the catalog's rough figure and moves no stock.</li>
+  </ul>
+  <h3 style="margin-top:16px">One part, two colours</h3>
+  <p>Different from a two-part product. A sign face printed blue with red lettering is <strong>one
+     printed piece using two filaments</strong> — the AMS swaps mid-print. Hit <strong>+ colour</strong>
+     under that part's filament and a second row appears.</p>
+  <ul>
+    <li>Once there are two or more colours, each gets its own grams box. Enter what Bambu Studio
+        reports for each filament — 140 g blue, 60 g red.</li>
+    <li>The Filament (g) column then becomes a read-only total of those figures, so you never type
+        the same number twice.</li>
+    <li>Cost is the sum of each colour at its own rate, so a cheap blue and an expensive red price
+        correctly rather than averaging.</li>
+    <li>Stock comes off each pool separately. Three runs of a 140/60 part draws 420 g blue and
+        180 g red.</li>
+    <li>One colour? Do nothing — the grams box stays hidden and the part works exactly as before.</li>
+  </ul>
+  <div class="callout">
+    <strong>Coming next</strong>
+    An automatic alert to your phone when a pool drops below its reorder threshold.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>If you do nothing else</h2></div>
+  <ol>
+    <li>Add every filament you own, with spool count and price, one time.</li>
+    <li>Every time you buy, hit <strong>+ Spools</strong>. Ten seconds.</li>
+    <li>When you quote a job, pick the colour for each part — <strong>+ colour</strong> if one part uses two.</li>
+    <li>Printing for yourself? <strong>Adjust → Log Personal Print</strong>. Grams and what it was.</li>
+    <li>Once a month, weigh everything and <strong>Reconcile</strong>.</li>
+  </ol>
+  <p style="margin-top:10px">That is the whole system. Everything else on these pages is reporting
+     on top of those four habits.</p>
+</section>
+
+</div>
+
+{% endblock %}

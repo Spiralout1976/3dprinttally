@@ -1,0 +1,85 @@
+services:
+  volume-permissions:
+    build: .
+    image: 3dprinttally:local
+    user: "0:0"
+    command: ["python", "prepare_volumes.py"]
+    environment:
+      APP_UID: ${APP_UID:-1000}
+      APP_GID: ${APP_GID:-1000}
+    volumes:
+      - ./data:/app/data
+      - ./backups:/backups
+    restart: "no"
+
+  app:
+    build: .
+    image: 3dprinttally:local
+    container_name: 3dprinttally
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    restart: unless-stopped
+    depends_on:
+      volume-permissions:
+        condition: service_completed_successfully
+    ports:
+      # Binds to loopback by default. The app ships with authentication DISABLED,
+      # so exposing it on 0.0.0.0 puts an unauthenticated admin UI on your network.
+      # Set BIND_ADDRESS=0.0.0.0 only after configuring BASIC_AUTH_* in .env, or
+      # after putting it behind a reverse proxy that handles authentication.
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8091}:8080"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-UTC}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  backups:
+    image: 3dprinttally:local
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["python", "backup_tools.py", "--scheduled", "--output", "/backups"]
+    volumes:
+      - ./data:/app/data
+      - ./backups:/backups
+    environment:
+      TZ: ${TZ:-UTC}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "backup_tools.py", "--health"]
+      interval: 1h
+      timeout: 10s
+      retries: 2
+      start_period: 5m

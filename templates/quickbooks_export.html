@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}QuickBooks Export · 3DPrintTally{% endblock %}
+{% block page_title %}Export for QuickBooks Online{% endblock %}
+{% block page_subtitle %}Choose products to add to your QuickBooks Products and Services list.{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-head"><h2>Choose a collection</h2><a class="btn ghost" href="{{ url_for('products', collection=collection, q=q) }}">Back to catalog</a></div>
+  <form method="get" class="form-grid">
+    <div class="field"><label for="collection">Collection</label><input id="collection" name="collection" value="{{ collection }}" list="collection-list" placeholder="All collections"></div>
+    <div class="field"><label for="query">Search</label><input id="query" name="q" value="{{ q }}" placeholder="SKU or product name"></div>
+    <input type="hidden" name="export_format" value="{{ export_format }}">
+    <button class="btn secondary" type="submit">Apply filters</button>
+    <a class="btn ghost" href="{{ url_for('quickbooks_export') }}">Clear filters</a>
+  </form>
+  <datalist id="collection-list">{% for name in collections %}<option value="{{ name }}">{% endfor %}</datalist>
+</section>
+<section class="card">
+  <div class="card-head"><h2>Review products</h2><span>{{ products|length }} active {{ 'product matches' if products|length == 1 else 'products match' }}</span></div>
+  <p>Each selected product becomes one CSV row, including products made from several parts. Uncheck anything you do not sell or do not want to import.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="collection" value="{{ collection }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <div class="field">
+      <label for="export-format">QuickBooks import layout</label>
+      <select id="export-format" name="export_format" style="min-width:0">
+        <option value="columns" {{ 'selected' if export_format == 'columns' else '' }}>New: separate category</option>
+        <option value="legacy" {{ 'selected' if export_format == 'legacy' else '' }}>Older: category in name</option>
+        <option value="identity" {{ 'selected' if export_format == 'identity' else '' }}>SKU and name only</option>
+      </select>
+      <p class="field-note">Use the layout matching the sample file in your QuickBooks import screen. Collections become categories; the older layout places the category before the product name.</p>
+    </div>
+    <p><strong id="selected-count" aria-live="polite"></strong> · Maximum 1,000 products per CSV.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th><input type="checkbox" id="select-all" aria-label="Select all displayed products" checked></th><th>SKU</th><th>Product name</th><th>Collection</th></tr></thead>
+      <tbody>{% for p in products %}
+      <tr><td><input class="export-item" type="checkbox" name="sku" value="{{ p.sku }}" aria-label="Export {{ p.product_name }} ({{ p.sku }})" checked></td><td><code>{{ p.sku }}</code></td><td>{{ p.product_name }}</td><td>{{ p.category or 'Unassigned' }}</td></tr>
+      {% else %}<tr><td colspan="4">No active products match. Change the filters or add a product in the catalog.</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <button class="btn primary" type="submit" id="download" {{ 'disabled' if not products else '' }}>Download QuickBooks CSV</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Import the file</h2>
+  <p>In QuickBooks Online, open Settings → Import data → Products and Services. Upload the CSV and map Product/Service Name, SKU, and Category if included. Review the items before saving.</p>
+  <p>This file supplies product identities. Choose each item's type and any required accounts in QuickBooks. It does not set quantities, opening balances, prices, or purchase costs. Customer notes and production details are not included.</p>
+  <p>For later imports, review QuickBooks' handling of existing items before choosing to overwrite. 3DPrintTally cannot see which products are already in your QuickBooks account.</p>
+</section>
+<script nonce="{{ csp_nonce }}">
+const all = document.getElementById('select-all');
+const boxes = Array.from(document.querySelectorAll('.export-item'));
+function updateSelection() {
+  const count = boxes.filter(box => box.checked).length;
+  document.getElementById('selected-count').textContent = count + ' selected';
+  document.getElementById('download').disabled = count === 0 || count > 1000;
+  all.checked = boxes.length > 0 && count === boxes.length;
+  all.indeterminate = count > 0 && count < boxes.length;
+}
+all.addEventListener('change', () => { boxes.forEach(box => { box.checked = all.checked; }); updateSelection(); });
+boxes.forEach(box => box.addEventListener('change', updateSelection));
+updateSelection();
+</script>
+{% endblock %}
