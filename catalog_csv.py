@@ -79,6 +79,12 @@ def encode_export(con):
                     {**{k:v for k,v in draw.items() if k != 'filament_type_id'},
                      'pool':pool_identity(con, draw.get('filament_type_id'))} for draw in raw
                 ] if raw is not None else None)
+            for label, value in row.items():
+                if isinstance(value, str) and (
+                    value.lstrip().startswith(('=', '+', '-', '@'))
+                    or any(ord(char) < 32 or ord(char) == 127 for char in value)
+                ):
+                    raise InputError(f'{product["sku"]} {label}: remove formula-like prefixes or control characters before CSV export. A full backup preserves the original text.')
             writer.writerow(row)
     return out.getvalue()
 
@@ -99,6 +105,13 @@ def parse_json(value, label):
 
 
 def apply_csv(con, text):
+    try:
+        return _apply_csv(con, text)
+    except csv.Error as error:
+        raise InputError('Invalid CSV: check quoting and field lengths.') from error
+
+
+def _apply_csv(con, text):
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames or len(reader.fieldnames) != len(set(reader.fieldnames)):
         raise InputError('CSV needs a header with unique column names.')
@@ -107,8 +120,8 @@ def apply_csv(con, text):
     for n,row in enumerate(reader,2):
         if n > 10001:
             raise InputError('CSV is limited to 10,000 rows.')
-        if None in row:
-            raise InputError(f'Row {n}: too many columns.')
+        if None in row or any(value is None for value in row.values()):
+            raise InputError(f'Row {n}: every row must have exactly the header column count.')
         sku = cell(row,'SKU','sku').upper()
         if not re.fullmatch(r'[A-Z0-9]{2,10}-\d{3,}',sku):
             raise InputError(f'Row {n}: SKU must be TYPE-NNN.')
@@ -172,7 +185,7 @@ def apply_csv(con, text):
                     draws = parse_json(row.get('Filament Draws JSON'),'Filament draws')
                     if draws is not None:
                         if not isinstance(draws,list) or len(draws)>32:
-                            raise InputError('Filament draws must be a list of at most 32 colours.')
+                            raise InputError('Filament draws must be a list of at most 32 colors.')
                         mapped=[]
                         for draw in draws:
                             if not isinstance(draw,dict) or 'pool' not in draw:

@@ -110,7 +110,7 @@ def _init_db():
         -- ── Design time log ──────────────────────────────────────────────────
         -- One row per stretch of custom design work. Non-recurring by definition:
         -- these minutes bill once, as a separate line on the quote, and are never
-        -- amortised into per-item cost.
+        -- amortized into per-item cost.
         --
         -- billable=0 is the learning-time rule made enforceable. Time spent
         -- working out HOW to do something (tutorials, test geometry, reading) is
@@ -207,17 +207,17 @@ def _init_db():
         add_column_if_missing("is_custom_job", "ALTER TABLE job_costs ADD COLUMN is_custom_job INTEGER NOT NULL DEFAULT 0")
     # filament_type_id already exists here — filament.py's own init adds it as a
     # plain nullable column before this ever ran. filament_draws_json holds
-    # every draw PAST THE FIRST for a part with two or more colours in one
+    # every draw PAST THE FIRST for a part with two or more colors in one
     # print (an AMS part), exactly like a job's own multi-draw fields — the
     # first draw is the filament_type_id/filament_used_g columns themselves.
-    # NULL for the overwhelming majority of parts, which have one colour.
+    # NULL for the overwhelming majority of parts, which have one color.
     part_columns = {r[1] for r in con.execute("PRAGMA table_info(product_parts)").fetchall()}
     if "filament_draws_json" not in part_columns:
         add_column_if_missing("filament_draws_json",
             "ALTER TABLE product_parts ADD COLUMN filament_draws_json TEXT")
     # Explicit intent, not inferred from a blank field. A linked part with
     # override=1 uses the hand-typed filament_cost even though a pool is
-    # picked — leftovers, a spool bought on sale, a favour for someone. The
+    # picked — leftovers, a spool bought on sale, a favor for someone. The
     # UI must show the override is active rather than silently prefer one
     # value over the other.
     if "filament_cost_override" not in part_columns:

@@ -1,8 +1,33 @@
 {% extends "base.html" %}
 {% block title %}Create Labels · 3DPrintTally{% endblock %}
 {% block page_title %}Create Labels{% endblock %}
-{% block page_subtitle %}Build the queue, then generate a print-ready label sheet PDF.{% endblock %}
+{% block page_subtitle %}Print adhesive labels for bins, shelves and drawers on an ordinary office printer.{% endblock %}
 {% block content %}
+
+{# This page confuses first-time users: in a 3D printing tool, "Create Labels"
+   reads as something the 3D printer makes. It does not. Explain it up front
+   rather than letting people guess. #}
+<section class="card">
+  <div class="card-head"><h2>What this page is for</h2></div>
+  <p><strong>These are sticky paper labels, not 3D printed parts.</strong> This page
+     builds a PDF you print on an ordinary inkjet or laser printer, onto a sheet of
+     peel-off address labels &mdash; the 30-per-sheet 2.625&Prime; &times; 1&Prime;
+     kind sold as Avery&reg; 5160 or 8160 and by every generic equivalent.</p>
+  <p>The point is physical organization: the bin of finished brackets on your shelf
+     gets a label with the product name and SKU on it, so what you pull off the
+     shelf matches what the catalog says it is. You can include the SKU, a quantity
+     and a QR code &mdash; toggle those under
+     <a href="{{ url_for('settings') }}">Settings</a>.</p>
+  <p class="field-note">Pick a start position so a part-used sheet is not wasted,
+     add the products you want, then generate. If labels land slightly off the
+     sheet, the alignment offsets and test sheet are in
+     <a href="{{ url_for('settings') }}">Settings &rarr; Label Sheet Alignment</a>
+     &mdash; that means your paper printer, not your 3D printer.</p>
+  <p class="field-note"><strong>This page is entirely optional.</strong> Nothing in
+     the catalog, costing or job quoting depends on it. If you only came here for
+     pricing, you can ignore it.</p>
+</section>
+
 <form method="post" action="{{ url_for('generate') }}" target="_blank" id="labelForm">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <section class="card">

@@ -70,10 +70,9 @@ class ReleaseTests(unittest.TestCase):
                 response=self.client.get(rule.rule)
                 self.assertEqual(response.status_code,400 if rule.rule=='/api/next-sku' else 200,rule.rule)
                 response.close()
-        # Any Host header is served when TRUSTED_HOSTS is unset, so a deployment
-        # reachable under several names does not need a canonical-host redirect.
-        for name in ('localhost','example.invalid','tally.example.test'):
-            self.assertEqual(self.client.get('/',base_url='https://'+name).status_code,200)
+        self.assertEqual(self.client.get('/', base_url='https://localhost').status_code, 200)
+        for name in ('example.invalid', 'tally.example.test'):
+            self.assertEqual(self.client.get('/', base_url='https://' + name).status_code, 400)
         for template in (PROJECT/'templates').glob('*.html'):app.app.jinja_env.get_template(template.name)
 
     def test_csrf_and_auth(self):
@@ -130,7 +129,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(self.post(f'/job-history/{jid}/delete').status_code,302)
             self.assertEqual(stock(),1000)
 
-    def test_material_colour_pool_merges_brands_and_allocates_stock(self):
+    def test_material_color_pool_merges_brands_and_allocates_stock(self):
         from filament import pools_for_picker, pooled_stock, record_pooled_movement
         with closing(app.db()) as con:
             con.execute("INSERT INTO filament_types(id,material,color_name,brand) VALUES(10,'PETG','Black','Overture')")
@@ -229,12 +228,13 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual((PHOTO_DIR/'TST-001.png').read_bytes(),before)
 
     def test_backup_restore_and_tamper_detection(self):
-        (PHOTO_DIR/'test.png').write_bytes(b'photo fixture')
+        Image.new('RGB', (10, 10), 'blue').save(PHOTO_DIR/'test.png')
+        photo_fixture = (PHOTO_DIR/'test.png').read_bytes()
         with tempfile.TemporaryDirectory() as temp:
             backup=save_backup(Path(temp)/'backups')
             restored=Path(temp)/'restored'
             self.assertTrue(verify_backup(backup,restored))
-            self.assertEqual((restored/'product-photos/test.png').read_bytes(),b'photo fixture')
+            self.assertEqual((restored/'product-photos/test.png').read_bytes(),photo_fixture)
             self.assertTrue(backup_status()['healthy'])
             with self.assertRaises(ValueError):verify_backup(backup,restored)
             corrupt=Path(temp)/'corrupt.zip'
@@ -246,9 +246,47 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             env={**os.environ,'TALLY_DATA_DIR':str(Path(temp)/'fresh')}
             def start(_):
-                return subprocess.run([sys.executable,'-c','import app; assert app.app.test_client().get("/").status_code==200'],cwd=PROJECT,env=env,capture_output=True,text=True)
+                # follow_redirects: this test is about three processes initializing
+                # the same fresh database without racing, not about routing. A brand
+                # new install redirects / to the guide, so follow it and assert a
+                # page actually rendered.
+                return subprocess.run([sys.executable,'-c','import app; assert app.app.test_client().get("/",follow_redirects=True).status_code==200'],cwd=PROJECT,env=env,capture_output=True,text=True)
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
                 for result in pool.map(start,range(3)):self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_first_run_routing_and_quote_guard(self):
+        """A fresh install must not silently hand someone a wrong price."""
+        # setUp seeds a product and two filament pools, so restore the pristine
+        # post-init database to get a genuinely first-run state.
+        shutil.copyfile(BASE,DB_PATH)
+        client=app.app.test_client()
+        readiness=app.costing_readiness()
+        self.assertTrue(readiness['first_run'])
+        self.assertTrue(readiness['rates_untouched'])
+        self.assertTrue(readiness['no_filament'])
+        # An empty install lands on the guide, not on a dashboard of zeros.
+        response=client.get('/')
+        self.assertEqual(response.status_code,302)
+        self.assertIn('/guide',response.headers['Location'])
+        self.assertIn('Start here',client.get('/guide').get_data(as_text=True))
+        # The Job Calculator warns while rates are examples and filament is absent.
+        page=client.get('/job-calculator').get_data(as_text=True)
+        self.assertIn('Check your setup before quoting',page)
+        self.assertIn('still the shipped examples',page)
+        self.assertIn('No filament has been added',page)
+        # Configure a rate and add stock: both warnings clear, dashboard is home.
+        with closing(app.db()) as con:
+            con.execute("UPDATE settings SET value='42' WHERE key='labor_rate'")
+            con.execute("UPDATE settings SET value='0.31' WHERE key='electricity_rate'")
+            con.execute("INSERT INTO filament_types(id,material,color_name,brand) VALUES(9,'PLA','Black','Acme')")
+            con.commit()
+        readiness=app.costing_readiness()
+        self.assertFalse(readiness['rates_untouched'])
+        self.assertFalse(readiness['no_filament'])
+        self.assertFalse(readiness['first_run'])
+        self.assertEqual(client.get('/').status_code,200)
+        self.assertNotIn('Check your setup before quoting',
+                         client.get('/job-calculator').get_data(as_text=True))
 
     def test_collections_create_filter_and_move_preserve_sku(self):
         for sku, name, collection in [('ORG-001','Pen Holder','  office   organization '),

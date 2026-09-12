@@ -28,8 +28,8 @@ A plate costs:
 ```
 electricity  = (print_minutes / 60) x (printer_watts / 1000) x electricity_rate
 machine_wear = (print_minutes / 60) x machine_wear_rate
-labour       = (active_labor_min / 60) x labor_rate
-plate_total  = filament_cost + electricity + machine_wear + labour
+labor        = (active_labor_min / 60) x labor_rate
+plate_total  = filament_cost + electricity + machine_wear + labor
 unit_cost    = plate_total / qty_on_plate
 ```
 
@@ -49,7 +49,7 @@ time — see section 5.
 
 There are two costing paths and they do not agree to the penny:
 
-| Function | Behaviour | Used by |
+| Function | Behavior | Used by |
 |---|---|---|
 | `calculate_pricing()` | Truncates every intermediate to 3 decimals | Catalog / Products page |
 | `calculate_quick()` | Full floating-point precision | Quick Calculator, all job quoting |
@@ -57,7 +57,7 @@ There are two costing paths and they do not agree to the penny:
 This is inherited from the spreadsheet lineage this tool replaced, where the
 catalog sheet and the quoting sheet rounded differently and therefore never
 matched exactly. Rather than quietly unify them and change everyone's catalog
-prices, both behaviours are preserved.
+prices, both behaviors are preserved.
 
 Practical consequence: **a job quote and a catalog price for the same item can
 differ by a cent or two. That is expected, not a bug.** Quote from the job
@@ -70,7 +70,7 @@ calculator.
 If you buy PLA Black from two vendors at different prices, you have:
 
 - **One cost pool.** `cost_per_gram_pooled()` returns the grams-weighted average
-  purchase price across every brand sharing that material and colour. Two 1,000 g
+  purchase price across every brand sharing that material and color. Two 1,000 g
   spools at $17.90 and $24.99 give $0.021445/g.
 - **Two stock ledgers.** Brand rows stay separate, because reordering is a
   per-brand decision and you need to know which one ran out.
@@ -137,7 +137,7 @@ Quote from the second one when spares will not be sold.
 
 ---
 
-## 5. Design time is not labour, and it is never per-item
+## 5. Design time is not labor, and it is never per-item
 
 Two different rates exist and conflating them is the single most expensive
 mistake in this model:
@@ -153,7 +153,7 @@ it is deliberately excluded from `true_cost_per_item`, `break_even_price` and th
 margin ladder. Those stay pure production numbers, so you can quote a reorder
 straight off them without stripping anything out.
 
-Amortising design into unit cost overprices every future order of that SKU
+Amortizing design into unit cost overprices every future order of that SKU
 permanently. Do not do it.
 
 ---
@@ -163,7 +163,7 @@ permanently. Do not do it.
 `min_job_charge` (default $40) is a floor, and it applies **only when
 `is_custom_job` is set**.
 
-A personalised catalog product is not a custom job. A cake topper with a
+A personalized catalog product is not a custom job. A cake topper with a
 different name on it is a SKU with a text field — it gets no design fee and no
 minimum. What separates the two is the flag, not the price.
 
@@ -197,7 +197,7 @@ so you can see what you are giving up when you discount. `default_wholesale_marg
 
 A product made of a holder printed 4-up and a stem printed 12-up needs different
 numbers of runs for the same order quantity. Each part is planned independently,
-then summed. Assembly labour is applied per finished unit, not per plate.
+then summed. Assembly labor is applied per finished unit, not per plate.
 
 Assemblies nest exactly **one level**. A component may not itself be an assembly.
 Self-reference and both nesting directions are rejected in application logic,
@@ -216,7 +216,7 @@ result in `payload_json`. Job history reads that JSON directly and **never
 recomputes**.
 
 This is the most important guarantee in the system. A quote you gave in March
-still shows March's numbers in December, after you have changed your labour rate
+still shows March's numbers in December, after you have changed your labor rate
 twice and filament prices have moved. If it re-priced itself, your records would
 silently become fiction and you would have no way to explain an old invoice.
 

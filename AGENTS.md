@@ -20,8 +20,7 @@ with, which sets the bar for changes: a wrong number here costs someone money.
 ## Non-negotiable rules
 
 - **Never commit, print or copy the contents of `.env`.**
-- **Never run `reset-catalog.py` against a live install.** It clears products,
-  parts, job costs and photos.
+- **The legacy reset-catalog.py is retired.** It must never delete live data.
 - **Never remove or disable manual entry anywhere.** Fields are free text with
   autocomplete, not constrained dropdowns. A shop that cannot type a value by
   hand is a shop that has to wait for a developer. Any proposal that locks a user
@@ -78,7 +77,7 @@ without prior discussion.
   in application logic, because foreign keys cannot prevent a cycle.
 - `job_costs` — `payload_json` holds the complete inputs, the parts snapshot and
   the computed result. Read directly, never recomputed.
-- `filament_types` / `filament_transactions` — keyed by brand + material + colour.
+- `filament_types` / `filament_transactions` — keyed by brand + material + color.
   In a live install this is the table set most likely to hold substantial real
   data. Treat any change to it as a migration, not a schema edit.
 - Also: `print_jobs` (label sheets, unrelated to costing), `settings`,
@@ -98,9 +97,9 @@ departments is one physical object and must have exactly one SKU.
 The item type segment is **free text** with an autocomplete list. Anything typed
 by hand must work. Do not constrain it.
 
-A SKU is deliberately colour-agnostic. `SGN-001` is the same part in white or
+A SKU is deliberately color-agnostic. `SGN-001` is the same part in white or
 blue. Linking a filament pool to a part is a cost estimate only, never a binding
-colour choice — the Job Calculator picks colour per job.
+color choice — the Job Calculator picks color per job.
 
 ## Costing
 
@@ -123,7 +122,7 @@ request with constant-time comparison, an Origin check, a per-request CSP nonce,
 serializing writes, request size caps, and uploaded images re-encoded to strip
 trailing payloads.
 
-Authentication is **off by default** and the app binds to loopback. Any change
+Authentication is **off by default**, Host headers are allowlisted, and direct startup and Compose publication bind to loopback. Any change
 that widens the default exposure needs a very good argument.
 
 ## Testing

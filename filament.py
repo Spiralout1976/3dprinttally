@@ -214,9 +214,9 @@ def cost_map(con):
 
 def cost_per_gram(con, filament_type_id):
     """Single-pool lookup. Used by the Job Calculator, where the customer's
-    colour choice lands on one specific brand's spool and the job should be
+    color choice lands on one specific brand's spool and the job should be
     priced from what THAT spool actually cost — not blended with any other
-    brand of the same colour."""
+    brand of the same color."""
     row = con.execute("""
         SELECT SUM(cost) AS c, SUM(grams) AS g
         FROM filament_transactions
@@ -229,13 +229,13 @@ def cost_per_gram(con, filament_type_id):
 
 
 def cost_per_gram_pooled(con, material, color_name):
-    """Weighted average $/g across every BRAND sharing this material+colour.
+    """Weighted average $/g across every BRAND sharing this material+color.
 
-    A shop may buy the same colour from more than one brand at different prices —
+    A shop may buy the same color from more than one brand at different prices —
     two vendors' PLA Green are two separate filament_types
     rows (separate stock, separate reorder tracking, on purpose) but ONE
-    colour a customer would ask for. A product's cost ESTIMATE should reflect
-    what that colour actually costs blended across every brand it's been
+    color a customer would ask for. A product's cost ESTIMATE should reflect
+    what that color actually costs blended across every brand it's been
     bought in, not lock onto whichever brand happened to get linked on the
     part. Never stored — this is a live query over the same
     filament_transactions ledger cost_per_gram() reads, just grouped wider."""
@@ -306,9 +306,9 @@ def pools_for_picker(con):
 def lab_average_cost_per_gram(con):
     """One blended $/g across every priced purchase in the lab.
 
-    Used ONLY for the Products-page estimate. A SKU has no colour, so it has no
+    Used ONLY for the Products-page estimate. A SKU has no color, so it has no
     particular spool to price against — this gives a ballpark. The Job Calculator
-    prices against the actual pool the customer's colour choice lands on."""
+    prices against the actual pool the customer's color choice lands on."""
     row = con.execute("""
         SELECT SUM(cost) AS c, SUM(grams) AS g FROM filament_transactions
         WHERE kind='purchase' AND cost IS NOT NULL AND grams > 0
@@ -626,7 +626,7 @@ def delete(fid):
         return redirect(url_for("filament.index"))
     # Product parts can link a pool for their cost estimate (see app.py's
     # get_product_parts). The primary link has a real FOREIGN KEY now and
-    # would raise its own IntegrityError below, but a SECOND colour on a
+    # would raise its own IntegrityError below, but a SECOND color on a
     # multi-draw part lives in filament_draws_json, which SQLite can't
     # constrain — checked here by hand so both cases get the same readable
     # message instead of the FK case surfacing as a raw constraint error.

@@ -269,8 +269,8 @@
              because HTML forbids nesting forms. #}
           <div class="section-divider" style="margin-top:18px">Printed Parts ({{ p.parts|length }})</div>
           <p class="field-note">Every printed piece that makes up one finished product. A one-piece product has a single part. Values come straight from Bambu Studio, for the whole plate.</p>
-          <p class="field-note"><strong>No colour bound to the SKU.</strong> A SKU is still the recipe, not the colour — {{ p.sku }} is the same part in white or blue. You choose the filament per job on the <a href="{{ url_for('job_calculator') }}">Job Calculator</a>, and that is where the exact cost and the stock deduction happen.</p>
-          <p class="field-note"><strong>Filament Cost below is an estimate, not a binding choice.</strong> Link a filament pool and this page prices the part from what that colour has actually cost, blended across every brand you buy it from — Hobby Lobby white and Bambu white average together. That number is <em>for this page's estimate only</em>; it never limits which colour a customer can actually get, and the real cost always comes from whatever colour is picked at quote time. Leave it unlinked, or tick Override, to keep typing the figure by hand.</p>
+          <p class="field-note"><strong>No color bound to the SKU.</strong> A SKU is still the recipe, not the color — {{ p.sku }} is the same part in white or blue. You choose the filament per job on the <a href="{{ url_for('job_calculator') }}">Job Calculator</a>, and that is where the exact cost and the stock deduction happen.</p>
+          <p class="field-note"><strong>Filament Cost below is an estimate, not a binding choice.</strong> Link a filament pool and this page prices the part from what that color has actually cost, blended across every brand you buy it from — Hobby Lobby white and Bambu white average together. That number is <em>for this page's estimate only</em>; it never limits which color a customer can actually get, and the real cost always comes from whatever color is picked at quote time. Leave it unlinked, or tick Override, to keep typing the figure by hand.</p>
 
           {% for part in p.parts %}
           <form method="post" action="{{ url_for('edit_product_part', part_id=part.id) }}" class="edit-form" style="border-left:3px solid var(--accent,#888);padding-left:12px;margin-bottom:14px">
@@ -282,8 +282,8 @@
             <div class="field"><label>Filament Used — Plate (g)</label><input id="g-part-{{ part.id }}" name="filament_used_g" type="number" step="0.01" min="0" value="{{ part.filament_used_g if part.filament_used_g is not none else '' }}"></div>
             <div class="field">
               <label>Filament Pool <span class="info">(optional — for this page's estimate)</span></label>
-              <div class="colour-stack" id="cs-part-{{ part.id }}" data-pid="part-{{ part.id }}"></div>
-              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColourPart('part-{{ part.id }}')">+ colour</button>
+              <div class="color-stack" id="cs-part-{{ part.id }}" data-pid="part-{{ part.id }}"></div>
+              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColorPart('part-{{ part.id }}')">+ color</button>
             </div>
             <div class="field"><label>Filament Cost — Plate ($) <span class="info">hand-typed</span></label>
               <input id="c-part-{{ part.id }}" name="filament_cost" type="number" step="0.01" min="0" value="{{ part.filament_typed_cost if part.filament_typed_cost is not none else '' }}">
@@ -299,7 +299,7 @@
               {% elif part.filament_derived %}
                 <span class="info">Estimate above is derived live from <strong>{{ part.filament_pool_label }}</strong>: ${{ "%.3f"|format(part.filament_cost) }}/plate. Tick Override to use the typed value instead.</span>
               {% elif part.filament_type_id %}
-                <span class="info">Linked to {{ part.filament_pool_label or 'a filament' }}, but that colour has no purchase history yet — using the typed figure until it does.</span>
+                <span class="info">Linked to {{ part.filament_pool_label or 'a filament' }}, but that color has no purchase history yet — using the typed figure until it does.</span>
               {% endif %}
             </div>
             <div class="field"><label>Active Labor (min, blank = default)</label><input name="active_labor_min" type="number" step="0.5" min="0" value="{{ part.active_labor_min if part.active_labor_min is not none else '' }}" placeholder="Default 2"></div>
@@ -326,8 +326,8 @@
             <div class="field"><label>Filament Used — Plate (g)</label><input id="g-part-new-{{ p.sku }}" name="filament_used_g" type="number" step="0.01" min="0"></div>
             <div class="field">
               <label>Filament Pool <span class="info">(optional — for this page's estimate)</span></label>
-              <div class="colour-stack" id="cs-part-new-{{ p.sku }}" data-pid="part-new-{{ p.sku }}"></div>
-              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColourPart('part-new-{{ p.sku }}')">+ colour</button>
+              <div class="color-stack" id="cs-part-new-{{ p.sku }}" data-pid="part-new-{{ p.sku }}"></div>
+              <button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColorPart('part-new-{{ p.sku }}')">+ color</button>
             </div>
             <div class="field"><label>Filament Cost — Plate ($)</label><input name="filament_cost" type="number" step="0.01" min="0" placeholder="rough estimate"></div>
             <div class="field"><label>Active Labor (min, blank = default)</label><input name="active_labor_min" type="number" step="0.5" min="0" placeholder="Default 2"></div>
@@ -389,15 +389,15 @@
                 {% set overridden_parts = p.parts|selectattr('filament_overridden')|list %}
                 {% if derived_parts or overridden_parts %}
                 <div class="field-note" style="margin-bottom:8px">
-                  <strong>True Cost / Item below includes a filament ESTIMATE, not a binding colour.</strong>
+                  <strong>True Cost / Item below includes a filament ESTIMATE, not a binding color.</strong>
                   {% if derived_parts %}{{ derived_parts|map(attribute='part_name')|join(', ') }}
                   {{ 'is' if derived_parts|length == 1 else 'are' }} priced from
                   {{ derived_parts|map(attribute='filament_pool_label')|unique|join(', ') }}, blended across every
-                  brand of that colour.{% endif %}
+                  brand of that color.{% endif %}
                   {% if overridden_parts %}{{ overridden_parts|map(attribute='part_name')|join(', ') }}
                   {{ 'is' if overridden_parts|length == 1 else 'are' }} using a hand-typed override instead of the
                   linked estimate.{% endif %}
-                  The real cost is always set by the colour actually picked at quote time on the
+                  The real cost is always set by the color actually picked at quote time on the
                   <a href="{{ url_for('job_calculator') }}">Job Calculator</a>.
                 </div>
                 {% elif p.assembly_components %}
@@ -504,14 +504,14 @@ document.getElementById('add-product-form').addEventListener('submit', function(
 });
 
 // ── Filament pool picker (Products-page estimate) ───────────────────────────
-// Ported from the Job Calculator's own colour-stack (same field naming,
+// Ported from the Job Calculator's own color-stack (same field naming,
 // {prefix}filp_{pid}_{n} / {prefix}filg_{pid}_{n}, prefix always "" here),
-// because a part can carry more than one colour in a single print exactly
+// because a part can carry more than one color in a single print exactly
 // the same way a job's custom row can. The real difference from the Job
 // Calculator: this widget never writes into the Filament Cost box. That
 // input stays the hand-typed fallback/override on this page — the derived
 // number it can be overridden against is computed server-side from the
-// material+colour blend and shown as read-only text next to it.
+// material+color blend and shown as read-only text next to it.
 //
 // Every part form on this page submits independently (HTML forbids nesting
 // forms, so each part already has its own <form>), so every stack's fields
@@ -525,7 +525,7 @@ const FIL_OPTIONS = [
 {%- endfor %}
 ];
 
-function colourOptionsPart(selected) {
+function colorOptionsPart(selected) {
   return ['<option value="">— none —</option>'].concat(
     FIL_OPTIONS.map(function (f) {
       return '<option value="' + f.id + '"' +
@@ -533,14 +533,14 @@ function colourOptionsPart(selected) {
     })).join("");
 }
 
-function addColourPart(domId, preset) {
+function addColorPart(domId, preset) {
   const stack = document.getElementById("cs-" + domId);
   if (!stack) return;
-  const n = stack.querySelectorAll(".colour-row").length;
+  const n = stack.querySelectorAll(".color-row").length;
   preset = preset || {};
   if (n === 1) {
     const gramsBox = document.getElementById("g-" + domId);
-    const firstRow = stack.querySelector(".colour-row");
+    const firstRow = stack.querySelector(".color-row");
     const firstGrams = firstRow ? firstRow.querySelector(".cgrams") : null;
     if (gramsBox && firstGrams && !firstGrams.value) {
       const existing = parseFloat(gramsBox.value);
@@ -548,26 +548,26 @@ function addColourPart(domId, preset) {
     }
   }
   const row = document.createElement("div");
-  row.className = "colour-row";
+  row.className = "color-row";
   row.style.cssText = "display:flex;gap:5px;align-items:center;margin-bottom:4px";
   row.innerHTML =
     '<select name="filp_part_' + n + '" style="min-width:0;flex:1" ' +
-      'onchange="syncPartColours(\'' + domId + '\')">' +
-      colourOptionsPart(preset.filament_type_id) + '</select>' +
+      'onchange="syncPartColors(\'' + domId + '\')">' +
+      colorOptionsPart(preset.filament_type_id) + '</select>' +
     '<input name="filg_part_' + n + '" type="number" step="0.01" min="0" ' +
       'class="cgrams" placeholder="g" style="width:5.5em;display:none" ' +
       'value="' + escapeHtml((preset.grams != null ? preset.grams : "")) + '" ' +
-      'oninput="syncPartColours(\'' + domId + '\')">' +
-    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this colour" ' +
-             'onclick="this.parentNode.remove();syncPartColours(\'' + domId + '\')">&times;</button>' : '');
+      'oninput="syncPartColors(\'' + domId + '\')">' +
+    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this color" ' +
+             'onclick="this.parentNode.remove();syncPartColors(\'' + domId + '\')">&times;</button>' : '');
   stack.appendChild(row);
-  syncPartColours(domId);
+  syncPartColors(domId);
 }
 
-function syncPartColours(domId) {
+function syncPartColors(domId) {
   const stack = document.getElementById("cs-" + domId);
   if (!stack) return;
-  const rows = stack.querySelectorAll(".colour-row");
+  const rows = stack.querySelectorAll(".color-row");
   const multi = rows.length > 1;
   const gramsBox = document.getElementById("g-" + domId);
   let total = 0;
@@ -582,7 +582,7 @@ function syncPartColours(domId) {
     if (multi) {
       gramsBox.readOnly = true;
       gramsBox.style.opacity = "0.65";
-      gramsBox.title = "Sum of the colours on this part";
+      gramsBox.title = "Sum of the colors on this part";
       gramsBox.value = total.toFixed(2).replace(/\.00$/, "");
     } else {
       gramsBox.readOnly = false;
@@ -594,11 +594,11 @@ function syncPartColours(domId) {
 
 document.addEventListener("DOMContentLoaded", function () {
   const PART_DRAWS = {{ part_draws_seed|tojson }};
-  document.querySelectorAll(".colour-stack").forEach(function (st) {
+  document.querySelectorAll(".color-stack").forEach(function (st) {
     const domId = st.dataset.pid;
     const saved = PART_DRAWS[domId] || [];
-    if (saved.length) { saved.forEach(function (d) { addColourPart(domId, d); }); }
-    else { addColourPart(domId); }
+    if (saved.length) { saved.forEach(function (d) { addColorPart(domId, d); }); }
+    else { addColorPart(domId); }
   });
 });
 // ─────────────────────────────────────────────────────────────────────────────

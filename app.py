@@ -52,7 +52,7 @@ def _part_filament_draws(part):
     """Every filament draw a product_part carries, oldest data-model draw
     first. filament_draws_json, when present, is the complete authoritative
     list (including what would otherwise be "draw 0"). When it's empty/NULL —
-    true for the overwhelming majority of parts, which have one colour — draw
+    true for the overwhelming majority of parts, which have one color — draw
     0 is synthesized from the plain filament_type_id/filament_used_g columns,
     the only ones a real FOREIGN KEY can actually constrain."""
     extra = part.get("filament_draws_json")
@@ -69,11 +69,11 @@ def _part_filament_draws(part):
     return []
 def resolve_filament_derivation(con, part):
     """(derived_cost, pool_label, total_grams) for one product_part's linked
-    filament, priced against the MATERIAL+COLOUR blend across every brand
+    filament, priced against the MATERIAL+COLOR blend across every brand
     (filament.pooled_cost_for_type) — never a single brand's own rate, per
     the requirement that the Products-page estimate blend brands of the
-    same colour. derived_cost is None when nothing is linked, or when every
-    linked colour has never actually been purchased — the caller falls back
+    same color. derived_cost is None when nothing is linked, or when every
+    linked color has never actually been purchased — the caller falls back
     to the hand-typed figure exactly as it always has for an unlinked part."""
     draws = _part_filament_draws(part)
     if not draws:
@@ -88,7 +88,7 @@ def resolve_filament_derivation(con, part):
             "SELECT material, color_name, brand FROM filament_types WHERE id=?",
             (fid,)).fetchone()
         if not row:
-            continue    # linked colour has since been deleted — price the rest
+            continue    # linked color has since been deleted — price the rest
         labels.append(pool_label(row))
         total_g += grams
         cpg = pooled_cost_for_type(con, fid)
@@ -98,11 +98,11 @@ def resolve_filament_derivation(con, part):
     label = ", ".join(labels) if labels else None
     return (total_cost if priced_any else None), label, (total_g or None)
 def get_product_parts(con, sku):
-    """Parts for a SKU. A SKU is still the recipe, not the colour — SGN-001 is
+    """Parts for a SKU. A SKU is still the recipe, not the color — SGN-001 is
     the same part whether a customer wants it white or blue, and the Job
     Calculator is still where that choice is actually made per job. But a
     part MAY optionally link a filament pool for its Products-page ESTIMATE
-    (filament_type_id, plus filament_draws_json for a second colour) — when
+    (filament_type_id, plus filament_draws_json for a second color) — when
     it does, filament_cost below is overwritten with the live pooled-cost
     derivation rather than the raw hand-typed column, unless
     filament_cost_override is set. filament_typed_cost always preserves the
@@ -132,7 +132,7 @@ def get_product_parts(con, sku):
             p["filament_derived"] = True
             p["filament_overridden"] = False
         else:
-            # Linked, but nothing costed for that colour across any brand yet —
+            # Linked, but nothing costed for that color across any brand yet —
             # falls back to the hand-typed figure, same as an unlinked part.
             p["filament_derived"] = False
             p["filament_overridden"] = False
@@ -147,16 +147,16 @@ def get_assembly_components(con, sku):
         (sku,)
     ).fetchall()
     return [dict(r) for r in rows]
-def _colour_draws(form, pid, default_grams, picked_pool, prefix=""):
+def _color_draws(form, pid, default_grams, picked_pool, prefix=""):
     """Which filament(s) one printed part draws from, and how many grams of each.
 
-    A part is usually one colour, but an AMS print can lay two or more inside a
+    A part is usually one color, but an AMS print can lay two or more inside a
     SINGLE printed piece — a sign face in blue with red lettering is one part and
     two filaments. That is a different thing from a two-PART product where each
-    part is its own colour, and the schema has to express both.
+    part is its own color, and the schema has to express both.
 
     Fields are `{prefix}filp_{pid}_{n}` (pool) and `{prefix}filg_{pid}_{n}` (grams),
-    n starting at 0. For a single colour the grams box is hidden in the UI and
+    n starting at 0. For a single color the grams box is hidden in the UI and
     left blank, so slot 0 falls back to the plate figure the part already carries
     — meaning nothing changes for the common case.
 
@@ -186,7 +186,7 @@ def _colour_draws(form, pid, default_grams, picked_pool, prefix=""):
         fid, cpg, label = picked_pool(f"{prefix}filp_{pid}_{n}")
         grams = g(n)
         if grams is None and not multi:
-            grams = default_grams          # single colour: use the plate figure
+            grams = default_grams          # single color: use the plate figure
         if not fid or not grams or grams <= 0:
             continue
         draws.append({"filament_type_id": fid, "filament_label": label,
@@ -234,7 +234,7 @@ def _custom_parts_from_form(form, picked_pool):
             continue
         grams = num("cp_grams", i)
         cost = num("cp_cost", i)
-        draws, tot_g, tot_cost = _colour_draws(form, i, grams, picked_pool,
+        draws, tot_g, tot_cost = _color_draws(form, i, grams, picked_pool,
                                                prefix="cp_")
         fid = draws[0]["filament_type_id"] if draws else None
         label = ", ".join(d["filament_label"] or "?" for d in draws) if draws else None
@@ -266,7 +266,7 @@ def _custom_parts_from_form(form, picked_pool):
 
 def _part_to_job_row(p, source_sku, qty_multiplier=1):
     """One product_parts row, reshaped into a job row — the same shape
-    addCustomRow()/the colour-stack JS expects for a freehand row, just
+    addCustomRow()/the color-stack JS expects for a freehand row, just
     pre-filled from the catalog instead of typed. qty_on_plate is copied as a
     STARTING DEFAULT only; the job route never writes it back to
     product_parts, and job_calculator.html leaves it a normal editable
@@ -374,8 +374,38 @@ def ensure_db():
     # Handles the rare case where the bind-mounted DB is removed while running.
     if not DB_PATH.exists():
         init_db()
+def costing_readiness():
+    """Is this install configured enough to quote a real price?
+
+    Two independent ways a fresh install produces a confident wrong number:
+    the cost rates are still the shipped examples, or there is no filament at
+    all — in which case every product's filament cost is zero and the largest
+    single input to a price is silently missing. Both are warnings, never
+    blocks: an empty shop is allowed to experiment.
+    """
+    from config import DEFAULT_SETTINGS
+    settings = get_settings()
+    watched = ("labor_rate", "electricity_rate", "printer_watts", "machine_wear_rate")
+    rates_untouched = all(
+        str(settings.get(k, "")) == str(DEFAULT_SETTINGS[k]) for k in watched
+    )
+    con = db()
+    filament_count = con.execute("SELECT COUNT(*) FROM filament_types").fetchone()[0]
+    product_count = con.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    job_count = con.execute("SELECT COUNT(*) FROM job_costs").fetchone()[0]
+    con.close()
+    return {
+        "rates_untouched": rates_untouched,
+        "no_filament": filament_count == 0,
+        "first_run": product_count == 0 and filament_count == 0 and job_count == 0,
+    }
 @app.route("/")
 def dashboard():
+    # A brand-new install has nothing to show: a dashboard of zeros tells a
+    # first-time user nothing about what this is or where to start. Send them
+    # to the guide until they have actually put something in.
+    if costing_readiness()["first_run"]:
+        return redirect(url_for("guide"))
     con = db()
     stats = {
         "products": con.execute("SELECT COUNT(*) FROM products WHERE active=1").fetchone()[0],
@@ -448,6 +478,30 @@ GUIDE_TEMPLATE = """{% extends "base.html" %}
 {% block page_title %}Product Guide{% endblock %}
 {% block page_subtitle %}How to build a product, cost it, and get it ready for a customer job.{% endblock %}
 {% block content %}
+
+{% if first_run %}
+<section class="card" style="border-left:3px solid var(--accent, #c0392b);">
+  <div class="card-head"><h2>Start here</h2></div>
+  <p>This install is empty. Work through these in order &mdash; each step depends on
+     the one before it, so skipping ahead produces prices that look right and are not.</p>
+  <ol class="steps">
+    <li><strong>Set your rates.</strong> The cost settings are pre-filled with
+        <em>example</em> figures, not measurements. Your electricity price, your
+        printer's draw and your own hourly rate are all different.
+        <a href="{{ url_for('settings') }}#cost">Open cost &amp; pricing settings</a>
+        and set labor rate, electricity rate, printer wattage and sales tax.</li>
+    <li><strong>Add your filament.</strong> <a href="{{ url_for('filament.index') }}">Filament</a>
+        &mdash; the spools you own and what you paid. Until something is here,
+        every filament cost is zero.</li>
+    <li><strong>Create a product.</strong> <a href="{{ url_for('products') }}">Products</a>
+        &mdash; a SKU, then the printed parts it is made of.</li>
+    <li><strong>Quote a job.</strong> <a href="{{ url_for('job_calculator') }}">Job Calculator</a>
+        &mdash; pick products, enter print time from your slicer, get a price.</li>
+  </ol>
+  <p class="field-note">Once you have added anything at all, the Dashboard becomes
+     your home page and this guide stays available from the sidebar.</p>
+</section>
+{% endif %}
 
 <style>
   .guide { max-width: 60rem; }
@@ -542,7 +596,7 @@ GUIDE_TEMPLATE = """{% extends "base.html" %}
       and department is just a label on whichever product actually sells it. Leave it blank for a
       shared part no single department owns; a blank department shows nothing, never a placeholder.
     </li>
-    <li><strong>Product Name</strong> — the human-readable name. This is what you will recognise in a dropdown six months from now, so "Deli Salad Case Sign Holder" beats "Sign v2".</li>
+    <li><strong>Product Name</strong> — the human-readable name. This is what you will recognize in a dropdown six months from now, so "Deli Salad Case Sign Holder" beats "Sign v2".</li>
     <li><strong>Material</strong> — PETG, PLA, and so on.</li>
     <li><strong>Collection</strong> — choose Office Organization, Kitchen Organization, Bathroom Organization, or type your own. Saved names become reusable choices. Filter the catalog by collection; moving a product keeps its SKU.</li>
     <li><strong>Notes</strong> — anything you want to remember about it.</li>
@@ -586,7 +640,7 @@ GUIDE_TEMPLATE = """{% extends "base.html" %}
     <li>Fill in that part's own plate numbers — it has its own Qty on Plate, print time and filament, because it prints separately.</li>
     <li>Click <strong>+ Add Part</strong>. Repeat for every piece.</li>
   </ol>
-  <p style="margin-top:10px">Each part can also carry its own <strong>Nozzle Size</strong>, <strong>Layer Height</strong>, <strong>STL Filename</strong> and <strong>3MF Filename</strong> — worth filling in so you can find the right file later. Name print files after the SKU; the filename boxes show a suggested name in grey as a reminder.</p>
+  <p style="margin-top:10px">Each part can also carry its own <strong>Nozzle Size</strong>, <strong>Layer Height</strong>, <strong>STL Filename</strong> and <strong>3MF Filename</strong> — worth filling in so you can find the right file later. Name print files after the SKU; the filename boxes show a suggested name in gray as a reminder.</p>
   <div class="callout">
     <strong>Parts print at different rates, and the maths respects that</strong>
     A body 4-up and a stem 12-up need different numbers of print runs for the same order. The Job
@@ -616,7 +670,7 @@ GUIDE_TEMPLATE = """{% extends "base.html" %}
     <dt>Selling</dt>
     <dd>Your Actual Selling Price, if you have set one.</dd>
     <dt>Margin</dt>
-    <dd>Your real margin at that price. Green at 50% or better, grey below. If you have not set a price, this shows the suggested retail instead.</dd>
+    <dd>Your real margin at that price. Green at 50% or better, gray below. If you have not set a price, this shows the suggested retail instead.</dd>
     <dt>Status</dt>
     <dd>Active or Archived. <strong>Only active products appear in the Job Calculator picker.</strong></dd>
   </dl>
@@ -691,7 +745,7 @@ def guide():
     # from Products with target=_blank. The markup is held inline rather than in
     # templates/ deliberately: it means deploying app.py alone delivers the guide,
     # with no second file that can fail to land and leave a dead link behind.
-    return render_template_string(GUIDE_TEMPLATE)
+    return render_template_string(GUIDE_TEMPLATE, **costing_readiness())
 @app.route("/products", methods=["GET", "POST"])
 def products():
     from product_collections import canonical_collection, catalog_rows, collection_options
@@ -798,19 +852,19 @@ def products():
             d["pricing"] = None
         products_with_pricing.append(d)
     # Lab-average $/g across every priced pool. Used only to caption the Products
-    # page as an estimate — a SKU has no colour, so it has no specific spool to
+    # page as an estimate — a SKU has no color, so it has no specific spool to
     # price against until a job picks one.
     from filament import lab_average_cost_per_gram, pools_for_picker, pooled_cost_for_type
     avg_cpg = lab_average_cost_per_gram(con2)
     filament_pools = pools_for_picker(con2)
-    # Pooled (material+colour, blended across brands) rate per pool id — what
+    # Pooled (material+color, blended across brands) rate per pool id — what
     # a linked part is actually priced from here, distinct from each pool's
     # own per-brand rate (which pools_for_picker's cost_per_gram field still
     # carries, unchanged, for anything that isn't this Products-page estimate).
     filament_pooled_rates = {f["id"]: pooled_cost_for_type(con2, f["id"]) for f in filament_pools}
-    # Seeds each part's colour-stack widget with whatever it's already linked
-    # to, keyed the same way the template's colour-stack elements are, so a
-    # page reload doesn't lose a saved multi-colour link.
+    # Seeds each part's color-stack widget with whatever it's already linked
+    # to, keyed the same way the template's color-stack elements are, so a
+    # page reload doesn't lose a saved multi-color link.
     part_draws_seed = {}
     for d in products_with_pricing:
         for part in d["parts"]:
@@ -978,12 +1032,12 @@ def _part_form_values():
 def _apply_filament_link(con, values, form):
     """Reads the filament picker/multi-draw fields a part form may carry and
     folds them into `values` in place, so add and edit do exactly the same
-    thing rather than drifting apart. Reuses _colour_draws() verbatim — same
+    thing rather than drifting apart. Reuses _color_draws() verbatim — same
     {prefix}filp_{pid}_{n}/{prefix}filg_{pid}_{n} fields the Job Calculator's
-    own colour stacks submit — but picked_pool here resolves to the
-    material+colour POOLED rate, not one brand's own rate, because this
+    own color stacks submit — but picked_pool here resolves to the
+    material+color POOLED rate, not one brand's own rate, because this
     number feeds a Products-page ESTIMATE meant to blend brands of the same
-    colour, not a specific job drawing from a specific spool.
+    color, not a specific job drawing from a specific spool.
 
     No selection submitted at all clears the link (draws == []) — the same
     "blank means unlinked" convention used everywhere else in this app.
@@ -997,7 +1051,7 @@ def _apply_filament_link(con, values, form):
             return None, None, None
         fid = int(raw)
         return fid, pooled_cost_for_type(con, fid), pool_name.get(fid)
-    draws, tot_g, _ = _colour_draws(form, "part", values.get("filament_used_g"),
+    draws, tot_g, _ = _color_draws(form, "part", values.get("filament_used_g"),
                                     picked_pool)
     if draws:
         values["filament_type_id"] = draws[0]["filament_type_id"]
@@ -1686,6 +1740,7 @@ def job_calculator():
             row["qty_ordered"] = plan.get("units_needed")
             row["runs"] = plan.get("print_runs_required")
     return render_template("job_calculator.html", result=result, form_values=form_values,
+                           **costing_readiness(),
                            design_available_minutes=design_available,
                            design_available_sessions=len(design_rows),
                            design_rate=design_rate,
@@ -1995,6 +2050,9 @@ app.register_blueprint(filament_bp)
 from quickbooks_export import register_quickbooks_export
 register_quickbooks_export(app)
 
+from source_distribution import register_source_distribution
+register_source_distribution(app)
+
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host="127.0.0.1", port=8080)

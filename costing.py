@@ -35,7 +35,7 @@ def calculate_pricing(qty_on_plate, filament_used_g, filament_cost, print_time_t
     truncated to three decimals before feeding the next. The difference from
     calculate_quick() below is pennies, but it is deliberate: catalog prices and
     quoted job prices came from two different sheets and were never identical, so
-    both behaviours are kept rather than silently unified.
+    both behaviors are kept rather than silently unified.
 
     Returns a dict of computed values, or a dict with 'error' set if required
     inputs are missing or invalid."""
@@ -137,8 +137,8 @@ def calculate_quick(qty_on_plate, filament_used_g, filament_cost, print_time_tex
 def calculate_part_batch(part, settings, truncating=True):
     """Costs ONE plate of ONE part. `part` is any mapping with qty_on_plate,
     filament_cost, print_time_text and active_labor_min. Returns a dict, or a dict
-    with 'error' set. `truncating` selects Products-sheet behaviour (truncate every
-    intermediate, as calculate_pricing does) vs Quick-Calculator behaviour (full precision)."""
+    with 'error' set. `truncating` selects Products-sheet behavior (truncate every
+    intermediate, as calculate_pricing does) vs Quick-Calculator behavior (full precision)."""
     labor_rate       = float(settings.get("labor_rate", 25))
     electricity_rate = float(settings.get("electricity_rate", 0.15))
     printer_watts    = float(settings.get("printer_watts", 120))
@@ -183,7 +183,7 @@ def calculate_part_batch(part, settings, truncating=True):
 def calculate_product_cost(parts, assembly_labor_min, actual_selling_price, settings,
                             truncating=True):
     """Costs a finished product from its bill of materials. A single-part product with
-    qty_per_product=1 and no assembly labour returns exactly what the old single-plate
+    qty_per_product=1 and no assembly labor returns exactly what the old single-plate
     calculation returned — existing costed products do not change value."""
     labor_rate = float(settings.get("labor_rate", 25))
     default_wholesale_margin = float(settings.get("default_wholesale_margin", 0.6))
@@ -320,7 +320,7 @@ def calculate_job_cost_from_parts(order_quantity, selling_price_per_item, sales_
     consistent with calculate_quick() rather than calculate_pricing().
 
     Design time is deliberately NOT costed per item. It is one-time work: it happens
-    once per design and never again on a reorder, so amortising it into unit cost
+    once per design and never again on a reorder, so amortizing it into unit cost
     would overprice every future order of the same SKU. It is charged as its own
     line, on top of the parts, and it is excluded from true_cost_per_item,
     break_even_price and the margin ladder — those stay pure production numbers."""
@@ -371,8 +371,8 @@ def calculate_job_cost_from_parts(order_quantity, selling_price_per_item, sales_
             "filament_label": p.get("filament_label"),
             "filament_used_g": c["filament_used_g"],
             "filament_total_g": runs * float(c["filament_used_g"] or 0),
-            # One entry per colour, already multiplied by the run count. This is
-            # what the deduction loop consumes, so a two-colour part draws from
+            # One entry per color, already multiplied by the run count. This is
+            # what the deduction loop consumes, so a two-color part draws from
             # two pools in the right proportion.
             "filament_draws": [
                 {"filament_type_id": d["filament_type_id"],
@@ -419,7 +419,7 @@ def calculate_job_cost_from_parts(order_quantity, selling_price_per_item, sales_
     design_minutes = float(design_minutes or 0)
     design_fee = (design_minutes / 60) * design_rate
     # ── Minimum job charge ────────────────────────────────────────────────────
-    # Custom design jobs only. A personalised catalogue product — the same cake
+    # Custom design jobs only. A personalized catalog product — the same cake
     # topper with different text — is a product sale, not a design job: no fee,
     # no floor. The flag is what separates them, not the price.
     min_job_charge = float(settings.get("min_job_charge", 0))

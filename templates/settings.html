@@ -1,24 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Settings · 3DPrintTally{% endblock %}
-{% block page_title %}Settings & Calibration{% endblock %}
-{% block page_subtitle %}Tune printer alignment, label content, and cost/pricing constants without editing code.{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_subtitle %}Your cost and pricing rates. Everything this app quotes is calculated from these.{% endblock %}
 {% block content %}
 <div class="grid two">
-<section class="card">
-  <div class="card-head"><h2>Printer Calibration</h2></div>
-  <p>Offsets move every label on the page. Positive X moves right. Positive Y moves down.</p>
+<section class="card" id="cost">
+  <div class="card-head"><h2>Cost &amp; Pricing</h2></div>
+  <p class="field-note">Used by the product cost calculator, Quick Calculator and Job Cost Calculator. Changing a rate re-prices the whole catalog immediately; saved jobs keep their quoted figures.</p>
+  <p class="field-note"><strong>These start as example values, not measurements.</strong> Electricity prices and printer power draw vary enormously — set your own before quoting anyone.</p>
   <form method="post" class="form-grid">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field"><label>X Offset (mm)</label><input name="x_offset_mm" type="number" step="0.1" value="{{ settings.x_offset_mm }}"></div>
-    <div class="field"><label>Y Offset (mm)</label><input name="y_offset_mm" type="number" step="0.1" value="{{ settings.y_offset_mm }}"></div>
-    <div class="field"><label>Business / Header Name</label><input name="company_name" value="{{ settings.company_name }}" placeholder="Optional"></div>
-    <div class="field"><label>QR Prefix</label><input name="qr_prefix" value="{{ settings.qr_prefix }}" placeholder="Optional URL or text prefix"></div>
-    <label class="check"><input type="checkbox" name="show_sku" {% if settings.show_sku=='1' %}checked{% endif %}> Show SKU</label>
-    <label class="check"><input type="checkbox" name="show_qty" {% if settings.show_qty=='1' %}checked{% endif %}> Show quantity</label>
-    <label class="check"><input type="checkbox" name="show_qr" {% if settings.show_qr=='1' %}checked{% endif %}> Show QR code</label>
-
-    <div class="section-divider">Cost &amp; Pricing Settings</div>
-    <p class="field-note">Used by the product cost calculator, Quick Calculator and Job Cost Calculator. Changing a rate re-prices the whole catalog immediately; saved jobs keep their quoted figures.</p>
     <div class="field"><label>Labor Rate ($/hour)</label><input name="labor_rate" type="number" step="0.01" value="{{ settings.labor_rate }}"></div>
     <div class="field"><label>Electricity Rate ($/kWh)</label><input name="electricity_rate" type="number" step="0.001" value="{{ settings.electricity_rate }}"></div>
     <div class="field"><label>Average Printer Draw (watts)</label><input name="printer_watts" type="number" step="1" value="{{ settings.printer_watts }}"></div>
@@ -54,27 +45,29 @@
       <span class="field-note">Floor for a custom design job. Covers the messaging, file prep and packaging that happen no matter how small the job. Never applied to catalog products. 0 disables it.</span>
     </div>
 
+    {# Label settings live at the bottom because most installs never touch them:
+       this app is deployed for job costing, and label printing is an extra.
+       They stay inside the same form so one Save submits everything — splitting
+       them into a second form would post without these fields and blank them. #}
+    <div class="section-divider" id="labels">Label Sheet Alignment <span class="field-note">— optional</span></div>
+    <p class="field-note">Only relevant if you use the <a href="{{ url_for('labels') }}">Create Labels</a> page.
+       <strong>This is about your paper printer, not your 3D printer</strong> — it corrects
+       adhesive label sheets that print slightly off-register. Offsets move every label on
+       the page: positive X moves right, positive Y moves down.</p>
+    <div class="field"><label>X Offset (mm)</label><input name="x_offset_mm" type="number" step="0.1" value="{{ settings.x_offset_mm }}"></div>
+    <div class="field"><label>Y Offset (mm)</label><input name="y_offset_mm" type="number" step="0.1" value="{{ settings.y_offset_mm }}"></div>
+    <div class="field"><label>Business / Header Name</label><input name="company_name" value="{{ settings.company_name }}" placeholder="Optional"></div>
+    <div class="field"><label>QR Prefix</label><input name="qr_prefix" value="{{ settings.qr_prefix }}" placeholder="Optional URL or text prefix"></div>
+    <label class="check"><input type="checkbox" name="show_sku" {% if settings.show_sku=='1' %}checked{% endif %}> Show SKU</label>
+    <label class="check"><input type="checkbox" name="show_qty" {% if settings.show_qty=='1' %}checked{% endif %}> Show quantity</label>
+    <label class="check"><input type="checkbox" name="show_qr" {% if settings.show_qr=='1' %}checked{% endif %}> Show QR code</label>
+
     <button class="btn primary" type="submit">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
       Save Settings
     </button>
   </form>
 </section>
-<section class="card">
-  <div class="card-head"><h2>Calibration Workflow</h2></div>
-  <ol class="steps">
-    <li>Download the calibration PDF.</li>
-    <li>Print on plain US Letter paper at Actual Size / 100%.</li>
-    <li>Place it behind a blank label sheet and hold both to a light.</li>
-    <li>Measure any horizontal/vertical drift in millimeters.</li>
-    <li>Enter the correction offsets here and print again.</li>
-  </ol>
-  <a class="btn secondary" href="{{ url_for('calibration') }}">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-    Download Calibration PDF
-  </a>
-</section>
-</div>
 <section class="card">
 <h2>Backups</h2>
 {% if backup_status.last_success %}
@@ -85,5 +78,22 @@
 <a class="btn primary" href="{{ url_for('backup_full') }}">Download full backup</a>
 <a class="btn secondary" href="{{ url_for('backup') }}">Database only</a>
 </section>
+</div>
+<section class="card">
+  <div class="card-head"><h2>Label Sheet Alignment Workflow</h2></div>
+  <p class="field-note">Optional — only needed if you print adhesive label sheets from the
+     <a href="{{ url_for('labels') }}">Create Labels</a> page. Skip this entirely if you
+     deployed this for job costing.</p>
+  <ol class="steps">
+    <li>Download the alignment test sheet.</li>
+    <li>Print on plain US Letter paper at Actual Size / 100%.</li>
+    <li>Place it behind a blank label sheet and hold both to a light.</li>
+    <li>Measure any horizontal/vertical drift in millimeters.</li>
+    <li>Enter the correction offsets <a href="#labels">in the settings above</a> and print again.</li>
+  </ol>
+  <a class="btn secondary" href="{{ url_for('calibration') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+    Download Alignment Test Sheet
+  </a>
+</section>
 {% endblock %}
-

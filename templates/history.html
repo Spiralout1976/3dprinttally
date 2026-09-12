@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Print History · 3DPrintTally{% endblock %}
 {% block page_title %}Print History{% endblock %}
-{% block page_subtitle %}Audit trail of generated label jobs.{% endblock %}
+{% block page_subtitle %}Label sheets you have generated — paper labels, not 3D prints.{% endblock %}
 {% block content %}
+<section class="card">
+  <p class="field-note">This is a record of adhesive label sheets produced on the
+     <a href="{{ url_for('labels') }}">Create Labels</a> page. It is not a history
+     of 3D prints, and it is unrelated to
+     <a href="{{ url_for('job_history') }}">Job Cost History</a>, which holds your
+     saved customer quotes.</p>
+</section>
 <section class="card">
 {% if jobs %}
 <div class="job-list">

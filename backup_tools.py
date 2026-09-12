@@ -87,42 +87,111 @@ def save_backup(directory):
         if temp.exists():temp.unlink()
 
 
+# Fixed resource budgets for untrusted restore inputs. Total includes the database.
+MAX_MANIFEST_BYTES = 1024 * 1024
+MAX_BACKUP_ENTRIES = 10000
+MAX_DATABASE_BYTES = 256 * 1024 * 1024
+MAX_PHOTO_BYTES = 32 * 1024 * 1024
+MAX_RESTORE_BYTES = 512 * 1024 * 1024
+
+
+def _copy_bounded(source, output, limit):
+    written = 0
+    while True:
+        chunk = source.read(min(64 * 1024, limit - written + 1))
+        if not chunk:
+            return written
+        written += len(chunk)
+        if written > limit:
+            raise ValueError('Backup exceeds its decompressed size limit.')
+        output.write(chunk)
+
+
+def _verify_photo(path):
+    import warnings
+    from PIL import Image, UnidentifiedImageError
+    formats = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                if image.format != formats.get(path.suffix.lower()) or image.width * image.height > 20_000_000:
+                    raise ValueError('Backup contains an invalid or oversized photo.')
+                image.verify()
+            with Image.open(path) as image:
+                image.load()
+    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        raise ValueError('Backup contains an invalid photo.') from error
+
+
 def verify_backup(path, restore_to=None):
-    """Always verifies to a new staging directory; never overwrites a live database."""
-    destination=Path(restore_to).resolve() if restore_to else None
+    """Verify a bounded archive in staging; never overwrite a live directory.
+
+    Checksums prove consistency, not provenance. Only restore trusted backups.
+    """
+    destination = Path(restore_to).resolve() if restore_to else None
     if destination and destination.exists():
         raise ValueError('Restore destination must not already exist. Restore beside the live data, then switch while the app is stopped.')
     with tempfile.TemporaryDirectory() as temporary:
-        stage=Path(temporary)
+        stage = Path(temporary)
         with zipfile.ZipFile(path) as archive:
-            names=archive.namelist()
-            if len(names)!=len(set(names)) or len(names)>100000:
+            entries = archive.infolist()
+            names = [entry.filename for entry in entries]
+            if len(names) != len(set(names)) or len(names) > MAX_BACKUP_ENTRIES:
                 raise ValueError('Duplicate or excessive backup entries.')
-            manifest=json.loads(archive.read('manifest.json'))
-            if manifest.get('version')!=1 or 'labels.db' not in manifest.get('files',{}):
+            if 'manifest.json' not in names:
+                raise ValueError('Backup manifest is missing.')
+            if archive.getinfo('manifest.json').file_size > MAX_MANIFEST_BYTES:
+                raise ValueError('Backup manifest is too large.')
+            with archive.open('manifest.json') as source, io.BytesIO() as buffer:
+                _copy_bounded(source, buffer, MAX_MANIFEST_BYTES)
+                manifest = json.loads(buffer.getvalue())
+            if not isinstance(manifest, dict) or manifest.get('version') != 1:
                 raise ValueError('Unsupported backup manifest.')
-            if set(names)!=set(manifest['files'])|{'manifest.json'}:
+            files = manifest.get('files')
+            if not isinstance(files, dict) or 'labels.db' not in files:
+                raise ValueError('Invalid backup file list.')
+            if set(names) != set(files) | {'manifest.json'}:
                 raise ValueError('Backup entries do not match the manifest.')
-            for name,digest in manifest['files'].items():
-                parts=Path(name).parts
-                if name!='labels.db' and not (len(parts)==2 and parts[0]=='product-photos' and parts[1] not in ('.','..')):
+            total = 0
+            # Preflight all metadata before writing any member.
+            for name, digest in files.items():
+                parts = Path(name).parts
+                if name != 'labels.db' and not (len(parts) == 2 and parts[0] == 'product-photos'
+                        and parts[1] not in ('.', '..') and not parts[1].startswith('.')
+                        and Path(name).suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp')):
                     raise ValueError('Unexpected backup path.')
-                if '\\' in name or ':' in name or name.startswith('/'):
-                    raise ValueError('Unsafe backup path.')
-                target=stage/name
+                if chr(92) in name or ':' in name or name.startswith('/') or not isinstance(digest, str) or len(digest) != 64:
+                    raise ValueError('Unsafe backup path or checksum.')
+                info = archive.getinfo(name)
+                if info.is_dir() or (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise ValueError('Backup links and directories are not supported.')
+                limit = MAX_DATABASE_BYTES if name == 'labels.db' else MAX_PHOTO_BYTES
+                total += info.file_size
+                if info.file_size > limit or total > MAX_RESTORE_BYTES:
+                    raise ValueError('Backup exceeds its decompressed size limit.')
+            remaining = MAX_RESTORE_BYTES
+            for name, digest in files.items():
+                target = stage / name
                 if not target.resolve().is_relative_to(stage.resolve()):
                     raise ValueError('Unsafe backup path.')
-                target.parent.mkdir(parents=True,exist_ok=True)
-                with archive.open(name) as source,target.open('wb') as output:
-                    shutil.copyfileobj(source,output)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                limit = min(remaining, MAX_DATABASE_BYTES if name == 'labels.db' else MAX_PHOTO_BYTES)
+                with archive.open(name) as source, target.open('wb') as output:
+                    remaining -= _copy_bounded(source, output, limit)
                 with target.open('rb') as handle:
-                    if hashlib.file_digest(handle,'sha256').hexdigest()!=digest:
+                    if hashlib.file_digest(handle, 'sha256').hexdigest() != digest:
                         raise ValueError(f'Checksum failed for {name}.')
-        with closing(sqlite3.connect(stage/'labels.db')) as con:
-            if con.execute('PRAGMA integrity_check').fetchone()[0]!='ok' or con.execute('PRAGMA foreign_key_check').fetchall():
+                if name != 'labels.db':
+                    _verify_photo(target)
+        with closing(sqlite3.connect(f'file:{stage / "labels.db"}?mode=ro', uri=True)) as con:
+            # Bound SQLite verification work as well as extraction volume.
+            deadline = time.monotonic() + 10
+            con.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            if con.execute('PRAGMA integrity_check').fetchone()[0] != 'ok' or con.execute('PRAGMA foreign_key_check').fetchall():
                 raise ValueError('Restored database failed integrity checks.')
         if destination:
-            shutil.copytree(stage,destination)
+            shutil.copytree(stage, destination)
     return True
 
 

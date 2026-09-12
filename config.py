@@ -44,7 +44,7 @@ DEFAULT_SETTINGS = {
     # a part's active_labor_min: that field is multiplied by every run, forever.
     "design_rate": "50",
     # Floor for a TRUE custom design job only (is_custom_job). Never applies to a
-    # personalised catalogue product — a cake topper with different text is a SKU
+    # personalized catalog product — a cake topper with different text is a SKU
     # with a text field, not a design job, and gets no minimum and no design fee.
     "min_job_charge": "40",
 }

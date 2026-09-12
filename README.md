@@ -6,7 +6,7 @@ You designed a part. Someone wants forty of them. What do you charge?
 
 3DPrintTally answers that question with real numbers instead of a guess: filament
 at your actual blended cost per gram, machine time, electricity, machine wear,
-the labour of pulling parts off a plate, the scrap you expect to throw away, and
+the labor of pulling parts off a plate, the scrap you expect to throw away, and
 the one-time CAD work that should not be billed again on the reorder. It keeps a
 catalog of products and the parts they are built from, prints address-label
 sheets for bins and shelves, and exports your product identities to QuickBooks
@@ -25,7 +25,7 @@ There are good tools in this space and they mostly solve a different problem.
 |---|---|---|---|
 | Filament stock and cost/gram | Yes | Yes, usually better | Yes |
 | Products built from multiple parts (BOM) | Yes | No | Sometimes |
-| Job quoting with scrap, labour, design time | Yes | No | Yes |
+| Job quoting with scrap, labor, design time | Yes | No | Yes |
 | Physical label sheet printing | Yes | No | No |
 | QuickBooks product export | Yes | No | Varies |
 | Self-hosted, no account, no subscription | Yes | Varies | No |
@@ -48,7 +48,8 @@ slicer. Assemblies nest exactly one level deep. These are deliberate; see
 Requires Docker with Compose v2.
 
 ```sh
-git clone https://github.com/YOURNAME/3dprinttally.git
+# Set REPOSITORY_URL to the HTTPS clone URL of the repository you are using.
+git clone "$REPOSITORY_URL" 3dprinttally
 cd 3dprinttally
 cp .env.example .env
 docker compose up -d --build
@@ -58,7 +59,7 @@ Open <http://127.0.0.1:8091>. The database is created on first run.
 
 Then, in this order:
 
-1. **Settings** — set your labour rate, electricity rate, printer wattage,
+1. **Settings** — set your labor rate, electricity rate, printer wattage,
    margins and scrap rate. Everything downstream is priced from these.
 2. **Filament** — add the spools you actually own, with what you paid.
 3. **Products** — create a SKU, then add the printed parts that make it up.
@@ -87,21 +88,27 @@ read and change everything. See [SECURITY.md](SECURITY.md).
 **Catalog.** Products are identified by SKU (`TYPE-NNN`, e.g. `SGN-003`). A
 product is made of one or more printed parts, each with its own grams, print
 time and filament. A product can also be an assembly of other products. SKUs are
-colour-agnostic on purpose: `SGN-001` is the same part in white or blue, and the
-colour is chosen per job.
+color-agnostic on purpose: `SGN-001` is the same part in white or blue, and the
+color is chosen per job.
 
 **Costing.** Covered in detail in [docs/COSTING-MODEL.md](docs/COSTING-MODEL.md).
 The short version: filament cost is blended across every brand you buy a given
-material and colour in, scrap uplift is applied at the plate level, and a saved
+material and color in, scrap uplift is applied at the plate level, and a saved
 job is frozen — it shows what you quoted, permanently, and never silently
 re-prices when your spool costs change.
 
 **Labels.** Generates print-ready PDFs for 30-up 2.625" × 1" address label
 sheets — the common format sold as Avery® 5160 and 8160, and by every generic
-equivalent. Includes a calibration sheet for dialling in printer offset.
+equivalent. Includes an alignment test sheet for dialing in paper-printer
+offset. (This is about the paper printer that prints the sheets, not the 3D
+printer.)
+
+> Label generation is where this project started and it works, but it is not
+> where active development goes. Treat it as stable rather than evolving:
+> bug reports welcome, feature requests likely to sit.
 
 **Filament.** Per-brand stock ledgers, pooled cost per gram across brands sharing
-a material and colour, and purchase history.
+a material and color, and purchase history.
 
 **QuickBooks Online.** Exports product identity rows (name, SKU, category) for
 bulk import. It deliberately does not invent accounts, item types, quantities or
@@ -148,3 +155,17 @@ Avery® is a registered trademark of Avery Dennison Corporation. This project is
 not affiliated with, endorsed by, or connected to Avery Dennison. Their product
 numbers are referenced only to describe the physical label sheet dimensions this
 software is compatible with.
+
+
+## License and corresponding source
+
+3DPrintTally is licensed under **AGPL-3.0-or-later**. See [LICENSE](LICENSE) and
+[COPYRIGHT](COPYRIGHT). You may use, modify and redistribute it, including
+commercially, subject to the license. Modified network deployments must offer
+corresponding source to their users. The application's sidebar includes a source
+archive download; deployment instructions explain how to keep it current.
+Third-party dependencies retain their own licenses; see [THIRD-PARTY.md](THIRD-PARTY.md).
+
+Catalog CSV export rejects formula-like prefixes and control characters to avoid
+spreadsheet execution. Manual entry remains available; a full backup preserves
+original text that cannot safely be exported to CSV.

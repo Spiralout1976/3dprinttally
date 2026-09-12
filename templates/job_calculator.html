@@ -3,6 +3,33 @@
 {% block page_title %}Job Cost Calculator{% endblock %}
 {% block page_subtitle %}Cost out a full customer order across multiple print runs — batching, tax, and profit included.{% endblock %}
 {% block content %}
+
+{% if rates_untouched or no_filament %}
+{# A fresh install will happily produce a confident, wrong price: the shipped
+   cost rates are examples rather than measurements, and with no filament in
+   the system the single largest input to a price is silently zero. Warn, do
+   not block — an empty shop is allowed to experiment. #}
+<section class="card" style="border-left:3px solid #b8860b;">
+  <div class="card-head"><h2>Check your setup before quoting</h2></div>
+  <ul>
+    {% if rates_untouched %}
+    <li><strong>Your cost rates are still the shipped examples.</strong> Labor
+        rate, electricity price, printer wattage and machine wear are at their
+        defaults. Those are placeholders, not measurements &mdash; electricity
+        prices and printer draw vary enormously.
+        <a href="{{ url_for('settings') }}#cost">Set your own rates</a>.</li>
+    {% endif %}
+    {% if no_filament %}
+    <li><strong>No filament has been added.</strong> Every filament cost is
+        therefore zero, so any price below excludes the largest single input.
+        <a href="{{ url_for('filament.index') }}">Add your spools</a>.</li>
+    {% endif %}
+  </ul>
+  <p class="field-note">You can still calculate &mdash; just do not quote a
+     customer from it yet.</p>
+</section>
+{% endif %}
+
 {# ── SECTION 1 — Parts. Pick one at a time; each Add appends pre-filled rows
       to the Parts of Product table below and never clears or locks anything.
       The picker resets after every Add, the part just added shows as a
@@ -341,14 +368,14 @@ const FIL_RATES = {
 {%- endif %}{% endfor %}
 };
 
-// ── Colour stack ───────────────────────────────────────────────────────────
+// ── Color stack ───────────────────────────────────────────────────────────
 // One printed part can lay more than one filament — an AMS print with a blue
-// face and red lettering is ONE part and TWO colours. With a single colour the
+// face and red lettering is ONE part and TWO colors. With a single color the
 // grams box stays hidden and the part's plate figure is used, so nothing about
-// the common case changes. Add a second colour and each one gets its own grams
+// the common case changes. Add a second color and each one gets its own grams
 // box, and their sum becomes the plate total.
-function colourOptions(selected) {
-  return ['<option value="">— pick a colour —</option>'].concat(
+function colorOptions(selected) {
+  return ['<option value="">— pick a color —</option>'].concat(
     FIL_OPTIONS.map(function (f) {
       return '<option value="' + f.id + '"' +
              (String(selected || "") === f.id ? " selected" : "") + '>' +
@@ -356,23 +383,23 @@ function colourOptions(selected) {
     })).join("");
 }
 
-function addColour(prefix, pid, preset) {
+function addColor(prefix, pid, preset) {
   const stack = document.getElementById("cs-" + prefix + pid);
   if (!stack) return;
-  const n = stack.querySelectorAll(".colour-row").length;
+  const n = stack.querySelectorAll(".color-row").length;
   preset = preset || {};
-  // Going from one colour to two: with a single colour, the shared FILAMENT (G)
+  // Going from one color to two: with a single color, the shared FILAMENT (G)
   // box is the only place grams get typed, and this row's own .cgrams input is
-  // hidden and left empty on purpose. The instant a second colour exists,
-  // syncColours() below only trusts the per-colour inputs, so without this
-  // migration the first colour's real grams are silently dropped from the
-  // total the moment "+ colour" is clicked. Runs once, only when the row count
+  // hidden and left empty on purpose. The instant a second color exists,
+  // syncColors() below only trusts the per-color inputs, so without this
+  // migration the first color's real grams are silently dropped from the
+  // total the moment "+ color" is clicked. Runs once, only when the row count
   // is about to go from 1 to 2, and only if that first row hasn't already been
-  // seeded with its own value (e.g. loading a saved multi-colour job).
+  // seeded with its own value (e.g. loading a saved multi-color job).
   if (n === 1) {
     const key0 = (prefix === "cp_") ? ("c" + pid) : pid;
     const sharedBox = document.getElementById("g-" + key0);
-    const firstRow = stack.querySelector(".colour-row");
+    const firstRow = stack.querySelector(".color-row");
     const firstGrams = firstRow ? firstRow.querySelector(".cgrams") : null;
     if (sharedBox && firstGrams && !firstGrams.value) {
       const existing = parseFloat(sharedBox.value);
@@ -380,26 +407,26 @@ function addColour(prefix, pid, preset) {
     }
   }
   const row = document.createElement("div");
-  row.className = "colour-row";
+  row.className = "color-row";
   row.style.cssText = "display:flex;gap:5px;align-items:center;margin-bottom:4px";
   row.innerHTML =
     '<select name="' + prefix + 'filp_' + pid + '_' + n + '" style="min-width:0;flex:1" ' +
-      'onchange="syncColours(\'' + prefix + '\',\'' + pid + '\')">' +
-      colourOptions(preset.filament_type_id) + '</select>' +
+      'onchange="syncColors(\'' + prefix + '\',\'' + pid + '\')">' +
+      colorOptions(preset.filament_type_id) + '</select>' +
     '<input name="' + prefix + 'filg_' + pid + '_' + n + '" type="number" step="0.01" min="0" ' +
       'class="cgrams" placeholder="g" style="width:5.5em;display:none" ' +
       'value="' + escapeHtml((preset.grams != null ? preset.grams : "")) + '" ' +
-      'oninput="syncColours(\'' + prefix + '\',\'' + pid + '\')">' +
-    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this colour" ' +
-             'onclick="this.parentNode.remove();syncColours(\'' + prefix + '\',\'' + pid + '\')">&times;</button>' : '');
+      'oninput="syncColors(\'' + prefix + '\',\'' + pid + '\')">' +
+    (n > 0 ? '<button type="button" class="icon-btn" title="Remove this color" ' +
+             'onclick="this.parentNode.remove();syncColors(\'' + prefix + '\',\'' + pid + '\')">&times;</button>' : '');
   stack.appendChild(row);
-  syncColours(prefix, pid);
+  syncColors(prefix, pid);
 }
 
-function syncColours(prefix, pid) {
+function syncColors(prefix, pid) {
   const stack = document.getElementById("cs-" + prefix + pid);
   if (!stack) return;
-  const rows = stack.querySelectorAll(".colour-row");
+  const rows = stack.querySelectorAll(".color-row");
   const multi = rows.length > 1;
   const key = (prefix === "cp_") ? ("c" + pid) : pid;
   const gramsBox = document.getElementById("g-" + key);
@@ -418,14 +445,14 @@ function syncColours(prefix, pid) {
       if (rate !== undefined) { cost += g * rate; priced = true; }
     }
   });
-  // With two or more colours the per-colour figures ARE the plate total, so the
+  // With two or more colors the per-color figures ARE the plate total, so the
   // grams column becomes a read-only sum rather than a second place to type it.
   if (gramsBox) {
     if (multi) {
       gramsBox.readOnly = true;
       gramsBox.style.opacity = "0.65";
-      gramsBox.title = "Sum of the colours on this part";
-      // Once there are two or more colours, the summed total is authoritative
+      gramsBox.title = "Sum of the colors on this part";
+      // Once there are two or more colors, the summed total is authoritative
       // even when it's zero — a stale nonzero value sitting in a read-only box
       // that no longer feeds the math is worse than an honest, visible zero.
       gramsBox.value = total.toFixed(2).replace(/\.00$/, "");
@@ -453,7 +480,7 @@ function syncColours(prefix, pid) {
 // prefix "") keeps working unchanged. The freehand call site below passes
 // its real prefix explicitly instead of a synthetic "c"-prefixed id that
 // never matched any element.
-function partCost(pid, prefix) { syncColours(prefix || "", pid); }
+function partCost(pid, prefix) { syncColors(prefix || "", pid); }
 
 // ── Custom job rows ────────────────────────────────────────────────────────
 // Indices only ever increase; removing a row leaves a gap, which the server
@@ -482,8 +509,8 @@ function addCustomRow(v) {
       '<input name="cp_name_' + i + '" value="' + escapeHtml((v.part_name || "")) + '" placeholder="e.g. Board" style="width:11em;margin-top:3px"><br>' +
       '<button type="button" class="btn ghost small" style="margin-top:3px" ' +
         'onclick="loadRowSku(' + i + ')" title="(Re)load this row\'s fields from the picked SKU">Load SKU</button></td>' +
-    '<td><div class="colour-stack" id="cs-cp_' + i + '" data-pid="' + i + '" data-prefix="cp_"></div>' +
-      '<button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColour(\'cp_\', ' + i + ')">+ colour</button></td>' +
+    '<td><div class="color-stack" id="cs-cp_' + i + '" data-pid="' + i + '" data-prefix="cp_"></div>' +
+      '<button type="button" class="btn ghost small addc" style="margin-top:6px" onclick="addColor(\'cp_\', ' + i + ')">+ color</button></td>' +
     '<td><input name="cp_qty_per_' + i + '" type="number" step="0.5" min="0.5" value="' + escapeHtml((v.qty_per_product || 1)) + '" style="width:5.5em"></td>' +
     '<td class="info" style="text-align:center">' + (qtyOrdered !== "" ? qtyOrdered : '<span class="info">—</span>') + '</td>' +
     '<td><input name="cp_plate_' + i + '" type="number" step="1" min="1" value="' + escapeHtml((v.qty_on_plate || "")) + '" placeholder="e.g. 4" style="width:6em"></td>' +
@@ -495,7 +522,7 @@ function addCustomRow(v) {
     '<td><button type="button" class="icon-btn" title="Remove this part" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
   document.getElementById("custom-body").appendChild(tr);
   const seed = (v.filament_draws && v.filament_draws.length) ? v.filament_draws : [{}];
-  seed.forEach(function (d) { addColour("cp_", i, d); });
+  seed.forEach(function (d) { addColor("cp_", i, d); });
   return i;
 }
 
@@ -511,7 +538,7 @@ function setPrimarySkuIfBlank(sku) {
 // CATALOG already carries `group` — the SKU's own TYPE-NNN type segment,
 // computed once server-side (sku_type_segment() in app.py) from the SKU
 // string SKU_RE already requires, not a new field. Grouping here is display
-// only: it decides how the two pickers below are organised, nothing about
+// only: it decides how the two pickers below are organized, nothing about
 // what gets costed or stored.
 const CATALOG = {{ catalog|tojson }};
 const pickedSkus = new Set();
@@ -519,7 +546,7 @@ const pickedSkus = new Set();
 // Shared by the Section 1 picker AND every row's own SKU select, so "same
 // grouping in both places" is literally the same function, not two
 // implementations that could drift. filterText narrows by SKU, part name or
-// department (Section 1's search box); disabledSet greys out SKUs already
+// department (Section 1's search box); disabledSet grays out SKUs already
 // picked at the top level (Section 1 only — a row's own picker is never
 // restricted, since two rows legitimately picking the same SKU is normal);
 // selectedSku pre-selects a row's current pick when rebuilding it.
@@ -645,7 +672,7 @@ function loadRowSku(i) {
       select.value = first.source_sku || sku;
       document.getElementById("cs-cp_" + i).innerHTML = "";
       const seed = (first.filament_draws && first.filament_draws.length) ? first.filament_draws : [{}];
-      seed.forEach(function (d) { addColour("cp_", i, d); });
+      seed.forEach(function (d) { addColor("cp_", i, d); });
       data.parts.slice(1).forEach(addCustomRow);
       setPrimarySkuIfBlank(data.sku);
     });

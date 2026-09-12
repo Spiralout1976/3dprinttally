@@ -14,6 +14,4 @@ __pycache__
 .pytest_cache
 .venv
 venv
-tests
 test-results*
-reset-catalog.py

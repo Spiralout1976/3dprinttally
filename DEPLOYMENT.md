@@ -9,7 +9,8 @@ used).
 ## First install
 
 ```sh
-git clone https://github.com/YOURNAME/3dprinttally.git
+# Set REPOSITORY_URL to the HTTPS clone URL of the repository you are using.
+git clone "$REPOSITORY_URL" 3dprinttally
 cd 3dprinttally
 cp .env.example .env
 ```
@@ -37,7 +38,7 @@ The database is created on first run. Open <http://127.0.0.1:8091>.
 
 Prices cascade, so the sequence matters:
 
-1. **Settings** — labour rate, electricity rate, printer wattage, machine wear,
+1. **Settings** — labor rate, electricity rate, printer wattage, machine wear,
    margins, scrap rate, design rate, minimum job charge.
 2. **Filament** — the spools you own and what you paid.
 3. **Products** — SKUs and the printed parts they are built from.
@@ -85,9 +86,11 @@ Either way, restrict the port with a host or network firewall as well. Set
 `COOKIE_SECURE=1` when access is HTTPS-only; leave it `0` for plain HTTP on a
 LAN, or browsers will drop the session cookie and nothing will stay logged in.
 
-`TRUSTED_HOSTS` is an optional Host-header allowlist. Blank accepts any hostname,
-which is correct behind a proxy that already filters them. When set, `localhost`
-and `127.0.0.1` are always included so the container healthcheck keeps working.
+`TRUSTED_HOSTS` adds explicit allowed hostnames to localhost, 127.0.0.1 and
+[::1]. Blank permits only these loopback names. Add every intended proxy or LAN
+hostname; unknown hosts receive 400 before authentication. Never use a wildcard.
+When TLS terminates at a proxy, forward the correct request scheme using a
+trusted WSGI/proxy configuration; do not trust arbitrary forwarded headers.
 
 There is no canonical-host redirect and no shared cookie domain, so the app can
 be served under several names at once. Each name gets its own session and CSRF
@@ -213,3 +216,43 @@ names and versions to OSV. Host checks are read-only; run them from every client
 network you expect to use, so a firewall rule that only works from one subnet is
 caught before your users find it. Test code and test dependencies are excluded
 from the production image.
+
+
+## Security release and source availability
+
+Direct `python app.py` is for local development and binds only 127.0.0.1:8080.
+Use Compose for deployment. App and backup services have a 1 GiB memory budget,
+two-CPU quota and 128-process limit. The one-shot volume initializer runs as root;
+the application and backup services run without root privileges.
+
+Use HTTPS and an authenticating reverse proxy for remote access. Enable rate
+limiting at that proxy, including for failed authentication and large downloads.
+Plain HTTP Basic credentials are not protected on the wire. Use COOKIE_SECURE=1
+for HTTPS. When extending TRUSTED_HOSTS, configure BASIC_AUTH_* or authenticated
+proxy access before exposing the service. Do not publish port 8080 directly from
+an ad-hoc container.
+
+The sidebar's Source code link downloads the corresponding source from an
+explicit SOURCE-MANIFEST.txt, including the full AGPL license. Runtime data,
+credentials and backups are never included. When modifying a deployment, update
+that manifest for new source files and rebuild/restart the app; its source offer
+is cached at startup. Keep build/install instructions and dependency pins with it.
+
+## Backups and fresh installations
+
+Only restore backups from a trusted source. Checksums are not signatures. Restore
+verification allows at most 10,000 ZIP entries, a 1 MiB manifest, a 256 MiB database,
+32 MiB per image and 512 MiB total decompressed content. It checks actual streamed
+bytes and validates image formats/pixels; SQLite checking has a 10-second budget.
+A larger installation needs reviewed limits and an independently tested backup
+strategy. Keep off-host backups. Rehearse restore before relying on a deployment.
+
+The old reset-catalog.py is retired and always exits without changing data.
+For an empty installation, use a separate new installation/data directory and
+port, preserving the existing data and verified full backup. No reset deletes
+purchases, relationships or photos as part of this release.
+
+The release uses the official Python Alpine image pinned by digest, applies
+Alpine package updates during build, and removes pip from the runtime image
+after dependency installation. Rebuild from source to change dependencies;
+do not install packages into a running container.

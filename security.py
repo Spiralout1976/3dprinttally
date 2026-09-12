@@ -35,20 +35,12 @@ def configure_security(app):
         SESSION_COOKIE_SAMESITE='Lax',
         SESSION_COOKIE_SECURE=os.environ.get('COOKIE_SECURE', '0') == '1',
     )
-    # No canonical-host redirect and no shared cookie domain, so the app answers on
-    # every name that reaches it -- a LAN hostname, a reverse-proxy name and an IP can
-    # all be used at once without one redirecting to another.
-    #
-    # Host restriction is opt-in. Leave TRUSTED_HOSTS blank and any Host header is
-    # accepted, which is the right default behind a proxy that already filters them.
-    # Set it to a comma-separated list to reject everything else; localhost and
-    # 127.0.0.1 are always added so container healthchecks keep working.
+    # Validate Host before authentication, including on static/health requests.
     configured_hosts = os.environ.get('TRUSTED_HOSTS', '').strip()
-    if configured_hosts:
-        app.config['TRUSTED_HOSTS'] = list(dict.fromkeys([
-            'localhost', '127.0.0.1',
-            *[x.strip() for x in configured_hosts.split(',') if x.strip()],
-        ]))
+    app.config['TRUSTED_HOSTS'] = list(dict.fromkeys([
+        'localhost', '127.0.0.1', '[::1]',
+        *[x.strip() for x in configured_hosts.split(',') if x.strip()],
+    ]))
     app.config['BASIC_AUTH_USERNAME'] = os.environ.get('BASIC_AUTH_USERNAME', '')
     app.config['BASIC_AUTH_PASSWORD_HASH'] = os.environ.get('BASIC_AUTH_PASSWORD_HASH', '')
     if bool(app.config['BASIC_AUTH_USERNAME']) != bool(app.config['BASIC_AUTH_PASSWORD_HASH']):
@@ -66,6 +58,7 @@ def configure_security(app):
 
     @app.before_request
     def protect_request():
+        _ = request.host  # Force Flask's trusted-host validation before early responses.
         g.started_at = time.monotonic()
         g.csp_nonce = secrets.token_urlsafe(24)
         g.request_id = secrets.token_hex(8)
@@ -73,14 +66,14 @@ def configure_security(app):
             username, password_hash = app.config['BASIC_AUTH_USERNAME'], app.config['BASIC_AUTH_PASSWORD_HASH']
             if password_hash:
                 auth = request.authorization
-                if not auth or not hmac.compare_digest(auth.username or '', username) or not check_password_hash(password_hash, auth.password or ''):
+                if not auth or not hmac.compare_digest((auth.username or '').encode('utf-8'), username.encode('utf-8')) or not check_password_hash(password_hash, auth.password or ''):
                     return Response('Authentication required.', 401, {'WWW-Authenticate': 'Basic realm="3DPrintTally", charset="UTF-8"'})
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             token = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token', '')
-            if not isinstance(token, str) or not hmac.compare_digest(token, session.get('_csrf', '')) or not token:
+            if not isinstance(token, str) or not token.isascii() or not token or not hmac.compare_digest(token, session.get('_csrf', '')):
                 raise InputError('This form has expired. Reload the page, then submit again.')
             origin = request.headers.get('Origin')
-            if origin and urlsplit(origin).netloc.lower() != request.host.lower():
+            if origin and (urlsplit(origin).scheme.lower(), urlsplit(origin).netloc.lower()) != (request.scheme, request.host.lower()):
                 raise InputError('Submit this form from the same website tab that opened it.')
             validate_form(request.form)
             lock = FileLock(str(DATA_DIR / '.operations.lock'), timeout=30)

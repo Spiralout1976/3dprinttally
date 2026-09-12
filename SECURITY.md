@@ -15,7 +15,8 @@ your costs, your filament purchases and your customer job history.
 
 Because of that:
 
-- `BIND_ADDRESS` defaults to `127.0.0.1`.
+- `BIND_ADDRESS` defaults to `127.0.0.1`; direct Python startup is also loopback-only.
+- Unknown Host headers are rejected unless explicitly listed in TRUSTED_HOSTS.
 - Authentication is off by default, because shipping a default credential is
   worse than shipping none.
 - Setting only one of `BASIC_AUTH_USERNAME` / `BASIC_AUTH_PASSWORD_HASH` is a
@@ -36,7 +37,7 @@ Do not put this on the public internet without authentication in front of it.
   executable payloads
 - Session cookies `HttpOnly` + `SameSite=Lax`; `Secure` via `COOKIE_SECURE`
 - A file lock serializing writes, so concurrent requests cannot interleave
-- Containers run read-only, non-root, `cap_drop: ALL`, `no-new-privileges`,
+- App and backup containers run read-only, non-root, `cap_drop: ALL`, `no-new-privileges`,
   with `/tmp` on `noexec,nosuid` tmpfs
 - Session key generated once at `data/.session-key` with mode 600; no shipped
   default secret
@@ -62,8 +63,18 @@ Queries OSV with package names and versions only. Dependencies are pinned in
 
 ## Reporting a vulnerability
 
-Open a private security advisory through the repository's Security tab rather
-than a public issue. Include a reproduction and the version or commit.
+Use the repository’s enabled private vulnerability reporting channel. If it is
+not enabled, ask the maintainer for a private contact without posting exploit
+details publicly. Include a reproduction and the version or commit. Repository
+owners must enable private reporting before advertising that channel.
 
 This is a small project maintained by one person alongside a day job. Expect a
 best-effort response, not an SLA.
+
+
+The September 12 security release bounds backup expansion and validates restored
+images, rejects spreadsheet-formula CSV fields, handles malformed tokens and CSV
+rows, retires the legacy destructive reset utility, and offers its corresponding
+source under AGPL-3.0-or-later. The source archive uses an explicit file manifest.
+The base image is digest-pinned; refresh its digest and dependency pins through
+reviewed, scanned builds. Advisory absence is not proof of vulnerability absence.

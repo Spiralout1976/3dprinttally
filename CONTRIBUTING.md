@@ -34,7 +34,7 @@ lines.
   pip install -r requirements-test.txt
   python -m unittest discover -s tests -v
   ```
-- New behaviour needs a test. Costing changes need a test with worked numbers in
+- New behavior needs a test. Costing changes need a test with worked numbers in
   it, because "it looks right" is how pricing bugs ship.
 - Match the surrounding style rather than reformatting. No repo-wide
   reformatting PRs.
